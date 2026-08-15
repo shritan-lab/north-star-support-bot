@@ -1,0 +1,3219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Star Support Bot</title>
+<meta name="description" content="Offline customer support bot for North Star Outfitters. Order tracking, returns, gear recommendations, and live agent handoff.">
+<!-- Favicon is an inline SVG data URI so the browser never requests /favicon.ico.
+     The colon in the SVG namespace is percent encoded, which is standard URI encoding. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http%3A//www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230F1E24'/%3E%3Cpath%20d='M16%204%20L18.4%2013.6%20L28%2016%20L18.4%2018.4%20L16%2028%20L13.6%2018.4%20L4%2016%20L13.6%2013.6%20Z'%20fill='%23E8A33D'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   THEME TOKENS
+   Night sky navigation and alpine dusk. Amber is used in exactly
+   two places: the live agent state and keyboard focus rings.
+   ============================================================ */
+:root{
+  --bg-deep:#0B141A;    /* near-black pine, base of the page */
+  --bg-glow-a:#2B3A45;  /* slate blue-grey, mid gradient */
+  --bg-glow-b:#C97B3D;  /* warm amber, horizon glow, background only */
+  --panel:#FAF8F4;      /* warm bone, the chat card */
+  --panel-alt:#F1EDE4;  /* a touch darker, bot bubbles and chips */
+  --ink:#14201F;        /* primary text */
+  --user:#1F3D46;       /* slate teal */
+  --accent:#E8A33D;     /* headlamp amber, live agent state and focus only */
+  --line:#E2DCCB;       /* warm hairline */
+  --muted:#606F75;      /* timestamps and system text, 4.9:1 on the panel */
+  --stack: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius:14px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+
+/* Alpine dusk, drawn entirely in layered CSS gradients: a warm horizon glow low
+   in the frame over deep pine and slate. It lives on the root so it always
+   covers the full canvas, and never sits under any text. */
+html{
+  background:
+    radial-gradient(140% 46% at 50% 72%, rgba(214,132,66,.60) 0%, rgba(201,123,61,.24) 38%, rgba(201,123,61,0) 66%),
+    radial-gradient(70% 30% at 22% 70%, rgba(186,104,96,.26) 0%, rgba(186,104,96,0) 62%),
+    radial-gradient(80% 34% at 82% 68%, rgba(232,163,61,.30) 0%, rgba(232,163,61,0) 60%),
+    linear-gradient(180deg, var(--bg-deep) 0%, #16242C 30%, var(--bg-glow-a) 56%, #45565C 70%, #22323A 86%, var(--bg-deep) 100%);
+  background-attachment:fixed;
+  background-repeat:no-repeat;
+}
+body{
+  margin:0;
+  color:var(--ink);
+  font-family:var(--stack);
+  font-size:15px;
+  font-weight:400;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  display:flex;
+  justify-content:center;
+  background:transparent;
+}
+
+.app{
+  position:relative;
+  width:100%;
+  max-width:480px;
+  height:100vh;
+  height:100dvh;
+  display:flex;
+  flex-direction:column;
+  background:var(--panel);
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:18px;
+  margin:0 auto;
+  overflow:hidden;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.35) inset,
+    0 18px 40px -12px rgba(6,12,16,.55),
+    0 40px 90px -30px rgba(6,12,16,.65);
+}
+@media (min-width:520px){
+  body{align-items:center;padding:20px}
+  .app{height:min(100dvh - 40px, 860px)}
+}
+
+/* one small arrival moment, nothing else animates */
+@keyframes panelIn{ from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+.app{animation:panelIn 300ms ease-out both}
+
+/* ---------- header ---------- */
+.hdr{
+  flex:none;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  background:linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-glow-a) 100%);
+  color:var(--panel);
+  transition:background 400ms ease, color 400ms ease;
+}
+.hdr.agent{
+  background:linear-gradient(135deg, #D9902F 0%, var(--accent) 100%);
+  color:var(--ink);
+}
+.mark{
+  flex:none;
+  width:38px;height:38px;
+  border-radius:50%;
+  display:grid;place-items:center;
+  background:rgba(255,255,255,.10);
+  transition:background-color 400ms ease;
+}
+.hdr.agent .mark{background:rgba(15,30,36,.14)}
+.mark svg{
+  width:22px;height:22px;fill:currentColor;display:block;
+  filter:drop-shadow(0 0 6px rgba(232,163,61,.55));
+}
+.hdr.agent .mark svg{filter:drop-shadow(0 0 5px rgba(20,32,31,.30))}
+.mark .glyph-person{display:none}
+.hdr.agent .glyph-star{display:none}
+.hdr.agent .glyph-person{display:block}
+.hdr-text{min-width:0}
+.hdr h1{
+  margin:0;
+  font-size:16.5px;
+  font-weight:600;
+  letter-spacing:-0.012em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.hdr .status{margin:0;font-size:12px;letter-spacing:.02em;opacity:.8}
+.dot{
+  display:none;
+  width:7px;height:7px;
+  border-radius:50%;
+  background:var(--ink);
+  margin-right:6px;
+}
+.hdr.agent .dot{display:inline-block}
+
+/* ---------- transcript ---------- */
+.transcript{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  padding:18px 16px 8px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.row{display:flex;flex-direction:column;max-width:86%}
+.row.bot{align-self:flex-start;align-items:flex-start}
+.row.user{align-self:flex-end;align-items:flex-end}
+.bubble{
+  padding:10px 13px;
+  border-radius:var(--radius);
+  background:#EFEADF;                /* 3% below the panel, a distinct surface */
+  border:1px solid #C6BCA4;          /* warm mid-tone, visible without weight */
+  box-shadow:0 1px 0 rgba(255,255,255,.75) inset, 0 1px 2px rgba(20,32,31,.06);
+  overflow-wrap:anywhere;
+}
+/* sharp near the tail, round elsewhere */
+.row.bot .bubble{border-bottom-left-radius:5px}
+.row.user .bubble{
+  background:var(--user);
+  border-color:var(--user);
+  color:#FFFFFF;
+  border-bottom-right-radius:5px;
+  box-shadow:0 1px 2px rgba(20,32,31,.18);
+}
+.bubble.from-agent{border-left:3px solid var(--accent)}
+/* the first bot message sets the first impression */
+.row.bot:first-child .bubble{font-size:16px}
+.bubble p{margin:0}
+.bubble p + p{margin-top:9px}
+.bubble strong{font-weight:600}
+.stamp{font-size:11px;color:var(--muted);margin:3px 4px 0}
+
+/* system divider */
+.sys{
+  align-self:stretch;
+  display:flex;align-items:center;gap:10px;
+  margin:4px 0;
+  color:var(--muted);
+  font-size:11px;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+}
+.sys::before,.sys::after{content:"";height:1px;flex:1;background:var(--line)}
+.sys.hot::before,.sys.hot::after{background:var(--accent)}
+
+/* typing indicator */
+.typing{display:flex;gap:5px;padding:14px 13px}
+.typing span{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--muted);
+  animation:pulse 1.1s infinite ease-in-out;
+}
+.typing span:nth-child(2){animation-delay:.16s}
+.typing span:nth-child(3){animation-delay:.32s}
+@keyframes pulse{
+  0%,60%,100%{opacity:.28;transform:translateY(0)}
+  30%{opacity:1;transform:translateY(-2px)}
+}
+
+/* ---------- quick replies ----------
+   Two equal columns, so a group of four never wraps 3-then-1. Groups of one or
+   three fill the row rather than leaving a ragged trailing item. */
+.quick{
+  flex:none;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  padding:2px 16px 0;
+}
+.quick:empty{padding:0}
+.quick.count-1{grid-template-columns:minmax(0,max-content)}
+.quick.count-3 .chip:nth-child(3){grid-column:1 / -1}
+.chip{
+  font:inherit;font-size:13.5px;
+  text-align:center;
+  color:var(--ink);
+  background:linear-gradient(180deg, #FFFDF9 0%, #EFEADF 100%);
+  border:1px solid #978B6E;          /* 3.2:1 on the panel, reads as a control */
+  border-radius:999px;
+  padding:8px 13px;
+  cursor:pointer;
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 1px 2px rgba(20,32,31,.09);
+  transition:transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+.chip:hover{
+  border-color:var(--user);
+  transform:translateY(-1px);
+  box-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 3px 8px rgba(20,32,31,.14);
+}
+.chip:active{
+  transform:translateY(0);
+  box-shadow:0 1px 3px rgba(20,32,31,.16) inset;
+}
+/* the state change reaches the chips too, not just the header */
+.agent-mode .chip{
+  border-color:rgba(232,163,61,.55);
+  background:linear-gradient(180deg, #FDF4E5 0%, var(--panel-alt) 100%);
+}
+.agent-mode .chip:hover{border-color:var(--accent)}
+
+/* ---------- composer ---------- */
+.composer{
+  flex:none;
+  display:flex;align-items:center;gap:8px;
+  padding:10px 16px;
+  margin-top:8px;
+  border-top:1px solid var(--line);
+}
+.composer input{
+  flex:1;min-width:0;
+  font:inherit;
+  padding:11px 14px;
+  color:var(--ink);
+  background:#FFFFFF;
+  border:1px solid var(--line);
+  border-radius:999px;
+  box-shadow:0 1px 3px rgba(20,32,31,.10) inset;
+}
+.composer input::placeholder{color:var(--muted)}
+.send{
+  flex:none;
+  width:40px;height:40px;
+  display:grid;place-items:center;
+  border:0;border-radius:50%;
+  background:linear-gradient(180deg, var(--accent) 0%, #D9902F 100%);
+  color:#20160A;
+  cursor:pointer;
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset, 0 2px 6px rgba(201,123,61,.35);
+}
+.send svg{width:18px;height:18px;fill:currentColor;display:block}
+.send[disabled]{opacity:.4;cursor:default;box-shadow:none}
+
+/* ---------- footer and self test ---------- */
+/* a quiet footnote, not a feature being advertised */
+.foot{
+  flex:none;
+  display:flex;align-items:center;justify-content:flex-end;
+  padding:0 16px 10px;
+  font-size:11px;
+  color:var(--muted);
+}
+.linkbtn{
+  font:inherit;font-size:11px;
+  letter-spacing:.02em;
+  color:var(--muted);
+  background:none;border:0;padding:2px 0;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
+}
+.linkbtn:hover{color:var(--ink)}
+/* a diagnostics drawer, deliberately quieter than the product above it */
+.panel{
+  flex:none;
+  max-height:46vh;
+  overflow-y:auto;
+  padding:14px 16px 16px;
+  background:var(--panel-alt);
+  border-top:1px solid var(--line);
+}
+.panel h2{
+  margin:0;
+  font-size:11px;font-weight:600;
+  letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);
+}
+.panel .summary{margin:4px 0 12px;font-size:15px;font-weight:600}
+.cases{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.case{
+  display:flex;gap:9px;align-items:flex-start;
+  padding:8px 10px;
+  font-size:12.5px;line-height:1.45;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+}
+.badge{
+  flex:none;
+  margin-top:1px;
+  padding:2px 6px;
+  font-size:10px;font-weight:600;letter-spacing:.06em;
+  border-radius:4px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  color:var(--muted);
+}
+.case.pass .badge{color:var(--user);border-color:var(--user)}
+.case.fail{border-color:var(--ink)}
+.case.fail .badge{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.case code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.case .meta{display:block;color:var(--muted);margin-top:2px}
+
+/* ---------- focus ---------- */
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.composer input:focus-visible{outline-offset:1px}
+
+/* ---------- responsive ---------- */
+@media (max-width:380px){
+  body{font-size:14.5px}
+  .transcript{padding:14px 12px 8px}
+  .quick,.composer,.foot,.panel{padding-left:12px;padding-right:12px}
+  .row{max-width:92%}
+}
+
+/* ---------- motion preference ---------- */
+@media (prefers-reduced-motion: reduce){
+  .hdr,.mark{transition:none}
+  .typing span{animation:none;opacity:.5}
+  .app{animation:none}
+  .chip{transition:none}
+  .chip:hover{transform:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="hdr" id="hdr">
+    <div class="mark" id="mark" aria-hidden="true">
+      <svg class="glyph-star" viewBox="0 0 32 32"><path d="M16 4 L17.84 11.57 L24.49 7.51 L20.43 14.16 L28 16 L20.43 17.84 L24.49 24.49 L17.84 20.43 L16 28 L14.16 20.43 L7.51 24.49 L11.57 17.84 L4 16 L11.57 14.16 L7.51 7.51 L14.16 11.57 Z"/></svg>
+      <svg class="glyph-person" viewBox="0 0 32 32"><circle cx="16" cy="11.5" r="4.8"/><path d="M6.6 27 a9.4 9.4 0 0 1 18.8 0 Z"/></svg>
+    </div>
+    <div class="hdr-text">
+      <h1 id="hdrTitle">North Star Support Bot</h1>
+      <p class="status" id="hdrStatus"><span class="dot" aria-hidden="true"></span><span id="hdrStatusText">Automated support</span></p>
+    </div>
+  </header>
+
+  <main class="transcript" id="transcript" role="log" aria-live="polite" aria-label="Conversation with North Star support"></main>
+
+  <div class="quick" id="quick" aria-label="Quick replies"></div>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <input id="input" type="text" placeholder="Type a message" aria-label="Type your message" autocomplete="off">
+    <button class="send" id="send" type="submit" aria-label="Send message">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2.4 21.6 22 12 2.4 2.4 2.4 9.9 16 12 2.4 14.1 Z"/>
+        <path d="M2.4 21.6 22 12 9.6 12 Z" opacity=".45"/>
+      </svg>
+    </button>
+  </form>
+
+  <div class="foot">
+    <button class="linkbtn" id="selftestToggle" type="button" aria-expanded="false" aria-controls="panel">Diagnostics</button>
+  </div>
+
+  <section class="panel" id="panel" aria-label="Self-test results" hidden>
+    <h2>Self-test</h2>
+    <p class="summary" id="summary"></p>
+    <ol class="cases" id="cases"></ol>
+  </section>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   1. CONTENT
+   Every user facing string and every piece of business data
+   lives here so it can be checked against the brief in one pass.
+   Nothing outside this block invents a fact.
+   ============================================================ */
+
+var COPY = {
+  greeting:
+    "Hi, I'm the North Star Support Bot. I can track an order, help with returns or exchanges, recommend gear, or connect you with a live agent.",
+
+  greetingIntent: "Hey. What can I help you with?",
+
+  askOrder: "Happy to help. What's your order number?",
+
+  order111:
+    "Order #111 has shipped and it's arriving tomorrow.\n\n" +
+    "Anything else?",
+
+  order222:
+    "Order #222 is processing and ships within 24 hours. Once it's on the way, standard shipping takes 3 to 5 business days.\n\n" +
+    "Anything else?",
+
+  order333: "Order #333 was delivered. Did everything arrive in good shape?",
+
+  followUpYes:
+    "Glad to hear it. Enjoy the trail.\n\n" +
+    "Anything else?",
+
+  followUpNo:
+    "Sorry about that. Our return window is 30 days from delivery, and items need to be unused and in their original packaging. " +
+    "You can start a return here: northstaroutfitters.com/returns\n\n" +
+    "If you'd rather sort it out with a person, I can connect you with a live agent.",
+
+  /* Never lists which order numbers exist. A support bot reciting the valid
+     numbers is a privacy failure. The demo numbers live in the footer instead,
+     as product chrome for the reviewer rather than bot speech to a customer. */
+  invalidOrderFirst:
+    "I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up.",
+
+  /* One escalation message for every way of being stuck. Three misses of any
+     kind, in any bot-controlled state, in any combination. */
+  stuckEscalation:
+    "I want to make sure you get sorted out. Let me connect you with a live agent.",
+
+  /* "I don't know" in the order flow is a real answer to acknowledge, but it is
+     still a miss: it moves the lookup no closer to resolving. */
+  orderNumberUnknown:
+    "No worries. If you can't find it, I can pull it up on the agent side instead.",
+
+  returns:
+    "Returns and exchanges at North Star:\n\n" +
+    "You have 30 days to return an item. It needs to be unused and in its original packaging.\n\n" +
+    "Exchanges use the same process, so start here either way: northstaroutfitters.com/returns\n\n" +
+    "Anything else?",
+
+  shipping:
+    "Standard shipping takes 3 to 5 business days. Expedited shipping takes 1 to 2 business days.\n\n" +
+    "Anything else?",
+
+  menuReset:
+    "Back to the main menu. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent.",
+
+  orderNumberPrompt:
+    "I'll need your order number to look that up. You can also type menu to go back.",
+
+  /* Answers to the bot's own closing question, "Anything else?" */
+  closingDone: "Happy to help. Have a good one out there.",
+  closingMore: "What can I help you with?",
+  courtesyThanks: "Anytime. Anything else I can help with?",
+
+  identityBot:
+    "I'm the North Star Support Bot. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent.",
+
+  /* Pricing, stock and carriers were never provided, so they are declined by
+     name rather than answered, guessed at, or quietly redirected. */
+  unavailable:
+    "I don't have pricing, stock or carrier details here. I can help with order tracking, returns and exchanges, or gear recommendations, or I can connect you with a live agent.",
+
+  /* Cancelling or editing an order is not something this bot can do. Say so,
+     rather than asking for an order number and implying it can. */
+  unsupportedAction:
+    "I can't change an order from here. I can look up its status, go over returns and exchanges, or connect you with a live agent.",
+
+  /* The brief provides the returns link and nothing else, so nothing else is offered. */
+  contact:
+    "I don't have a general site link to share here. For returns and exchanges you can go to northstaroutfitters.com/returns",
+
+  /* The category description comes from the brief, so it is provided data. */
+  catalogIntro: "We carry outdoor apparel and camping gear.",
+
+  recQ1: "Let's find the right gear. What are you heading out for?",
+
+  recQ2: "Good pick. What conditions are you expecting?",
+
+  /* Rotated in order, so four recommendations in a row do not read as four
+     copies of the same sentence with the nouns swapped. */
+  recTemplates: [
+    "For {activity} in {conditions} conditions, start with **{primary}**. Worth adding: {secondary}.",
+    "Heading out {activity} in {conditions} conditions, I'd start with **{primary}**. Worth adding: {secondary}.",
+    "For {conditions} conditions, **{primary}** is where I'd start. Worth adding: {secondary}."
+  ],
+
+  /* Asked a specific question, an unrecognized answer re-asks that question
+     rather than dumping the user back at the main menu. */
+  recReprompt: "Sorry, I didn't understand that. Which of these is closest?",
+  followUpReprompt: "Sorry, I didn't understand that. Did everything arrive in good shape?",
+  recCancel: "No problem. What else can I help you with?",
+
+  agentConnecting: "Connecting you with a live agent now.",
+  agentDivider: "Live Agent connected",
+  agentIntro:
+    "Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?",
+  /* Riley prefixes a lookup with one of these, so the facts stay identical to
+     the bot's while the voice does not repeat. Rotated in order. Direct answers
+     (courtesy, identity, contact, what-are-you) take no prefix at all. */
+  agentPrefixes: [
+    "Sure, I can pull that up.",
+    "Let me check that for you.",
+    "Of course, here you go."
+  ],
+
+  /* Riley never opens a multi-turn flow he cannot finish. He hands it back. */
+  agentHandback:
+    "Let me hand you back to the support bot, it'll walk you through it.",
+
+  agentAlready:
+    "You're already connected with me, Riley. Go ahead.",
+
+  identityAgent: "I'm Riley, part of the North Star support team.",
+
+  /* Rotated in order so the same one never lands twice in a row. These replace
+     the old case-notes phrasing: a question must never be answered by telling
+     the user their question has been filed. Each one offers a real next step. */
+  agentAcks: [
+    "I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations.",
+    "That one's outside what I can pull up here. I can help with an order lookup, returns and exchanges, or gear recommendations through the support bot.",
+    "I'm not able to answer that one. What I can do is check an order, explain returns and exchanges, or get you gear recommendations."
+  ],
+
+  agentCapability:
+    "I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations.",
+
+  agentGreeting: "Hi again. What can I help with?",
+
+  /* "order" is both a noun and a verb. When the sense is genuinely unclear,
+     ask instead of guessing and demanding a number they may not have. */
+  orderSenseQuestion:
+    "Happy to help. Are you looking up an existing order, or looking to buy something?",
+
+  /* The brief is outdoor apparel and camping gear. Say so rather than forcing an
+     unrelated activity into one of the four categories. */
+  recOutOfScope:
+    "That one's a bit outside what we carry, we're focused on outdoor apparel and camping gear. Want me to point you toward something in that range instead?",
+
+  /* Not knowing is a normal answer to a recommendation question. */
+  recUnsureQ1: "No problem. Here's what most people start with, pick whichever is closest.",
+  recUnsureQ2: "No problem. What's the weather usually like when you head out?",
+
+  agentFollowUpYes: "Glad to hear it. Anything else I can help with?",
+
+  /* Negation: the user asked for something not to happen. */
+  negatedAgent:
+    "Understood, I'll keep you here with the support bot. What can I help you with?",
+  negatedOther: "No problem. What would you like to do instead?",
+
+  frustration: "Sorry, I'm not making this easy. Let me get you to a live agent.",
+
+  agentIdentity:
+    "Fair question. This is a simulated live agent state for this demo, so I'm scripted rather than a real person. In production this is where a human agent picks up with the full conversation history.",
+
+  agentTiming:
+    "I don't have a specific time to give you on that, and I don't want to guess. Your conversation is logged, so whoever picks it up will have the full context.",
+
+  agentClosing:
+    "Happy to help. Your conversation stays logged, and you can head back to the main menu any time.",
+
+  agentUnknownOrder:
+    "I'm not finding an order with that number on my end. Can you double check it?",
+
+  agentExitDivider: "Back with the support bot",
+  agentExit: "You're back with the North Star Support Bot. What can I help you with?",
+
+  fallbackFirst:
+    "Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.",
+
+
+  switchAck: "Sure, let's switch gears."
+};
+
+/* Quick reply sets. Labels are the exact text sent when a chip is clicked. */
+var QUICK = {
+  none: [],
+  menu: ['Track my order', 'Returns and exchanges', 'Help me find gear', 'Talk to a live agent'],
+  orderHelp: ['Talk to a live agent', 'Back to main menu'],
+  invalidOrder: ['Try again', 'Talk to a live agent', 'Back to main menu'],
+  delivered: ['Yes, all good', 'I need to return something', 'Talk to a live agent'],
+  orderSense: ['Look up an order', 'Find gear to buy'],
+  recQ1: ['Hiking and backpacking', 'Camping', 'Winter sports', 'Everyday outdoors'],
+  recQ2: ['Warm and dry', 'Cool and variable', 'Cold and snowy', 'Wet and rainy'],
+  agent: ['Back to main menu']
+};
+
+/* Order book. Three known orders, everything else is invalid. */
+var ORDERS = {
+  '111': { status: 'Shipped, arriving tomorrow',  reply: COPY.order111, next: 'MENU',                 quick: QUICK.menu },
+  '222': { status: 'Processing, ships in 24 hours', reply: COPY.order222, next: 'MENU',                quick: QUICK.menu },
+  '333': { status: 'Delivered',                   reply: COPY.order333, next: 'ORDER_333_FOLLOWUP',   quick: QUICK.delivered }
+};
+
+/* Recommendation options. `phrase` is the sentence form used in the result template. */
+var REC_ACTIVITIES = [
+  /* The four categories are our own design, not contract data, so the synonym
+     lists are generous. Each maps to the nearest of the four. */
+  { id:'hiking',   label:'Hiking and backpacking', phrase:'hiking and backpacking',
+    aliases:['hiking and backpacking','hiking','hike','hikes','backpacking','backpack','trail','trails',
+      'trekking','treking','trek','trekkin','backcountry','thru hike','day hike','mountaineering',
+      'climbing','scrambling','rambling','walking trails'] },
+  { id:'camping',  label:'Camping',                phrase:'camping',
+    aliases:['camping','camp','campsite','campground','car camping','tent camping','glamping',
+      'rv','overlanding','van life','vanlife','wild camping'] },
+  { id:'winter',   label:'Winter sports',          phrase:'winter sports',
+    aliases:['winter sports','winter','ski','skiing','snowboard','snowboarding','sledding',
+      'snowshoeing','snowshoe','ice climbing','sledging','apres ski'] },
+  { id:'everyday', label:'Everyday outdoors',      phrase:'everyday outdoors',
+    aliases:['everyday outdoors','everyday','every day','casual','around town','commuting','commute',
+      'walking the dog','dog walking','dog walks','running','jogging','fishing','kayaking','canoeing',
+      'cycling','biking','picnic','park','general outdoor use','errands'] }
+];
+
+var REC_CONDITIONS = [
+  /* `phrase` is the bare condition. The word "conditions" lives in the result
+     templates below, because each one places it differently. */
+  { id:'warm', label:'Warm and dry',      phrase:'warm and dry',
+    aliases:['warm and dry','warm','hot','heat','dry','sunny','sunshine','humid and hot','desert','summer'] },
+  { id:'cool', label:'Cool and variable', phrase:'cool and variable',
+    aliases:['cool and variable','cool','variable','mild','breezy','changeable','spring weather',
+      'fall weather','autumn','spring','unpredictable'] },
+  { id:'cold', label:'Cold and snowy',    phrase:'cold and snowy',
+    aliases:['cold and snowy','cold','snowy','snow','freezing','frigid','ice','icy','below freezing',
+      'winter weather','arctic','sub zero'] },
+  { id:'wet',  label:'Wet and rainy',     phrase:'wet and rainy',
+    aliases:['wet and rainy','wet','rainy','rain','raining','damp','storm','stormy','humid',
+      'monsoon','drizzle','showers'] }
+];
+
+/* Category level guidance only. No product names, no prices, no stock. */
+var REC_MATRIX = {
+  hiking: {
+    warm: ['Lightweight hiking apparel and trail footwear', 'sun-protective layers and a hydration pack'],
+    cool: ['Midweight insulating layers and trail footwear', 'a packable wind shell'],
+    cold: ['Insulated jackets and thermal base layers', 'winter trail footwear with traction'],
+    wet:  ['Waterproof rain shells and waterproof hiking boots', 'quick-dry base layers']
+  },
+  camping: {
+    warm: ['Three-season tents and lightweight sleeping bags', 'camp furniture and a shade tarp'],
+    cool: ['Three-season tents and midweight sleeping bags', 'an insulated sleeping pad'],
+    cold: ['Four-season tents and cold-rated sleeping bags', 'an insulated sleeping pad and a camp stove'],
+    wet:  ['Waterproof tents and rain tarps', 'waterproof stuff sacks and a groundsheet']
+  },
+  winter: {
+    warm: ['Spring-weight shells and light insulation', 'goggles and sun protection'],
+    cool: ['Insulated shells and midlayers', 'insulated gloves'],
+    cold: ['Heavyweight insulated jackets and thermal base layers', 'insulated gloves and a balaclava'],
+    wet:  ['Waterproof insulated shells', 'waterproof gloves and a helmet cover']
+  },
+  everyday: {
+    warm: ['Lightweight everyday outdoor apparel', 'a sun hat and casual trail shoes'],
+    cool: ['Fleece and softshell layers', 'everyday trail footwear'],
+    cold: ['Insulated everyday jackets', 'a beanie and insulated gloves'],
+    wet:  ['Rain jackets and water-resistant footwear', 'a waterproof daypack']
+  }
+};
+
+/* Fills the next result template. {activity} and {conditions} take the `phrase`
+   forms above, {primary} and {secondary} come from REC_MATRIX. The template
+   rotates so it never repeats twice in a row. */
+function recResultText(session, activityId, conditionId){
+  var a = optionById(REC_ACTIVITIES, activityId);
+  var c = optionById(REC_CONDITIONS, conditionId);
+  var pair = REC_MATRIX[a.id][c.id];
+
+  session.recTemplateIndex = (session.recTemplateIndex + 1) % COPY.recTemplates.length;
+
+  var body = COPY.recTemplates[session.recTemplateIndex]
+    .replace('{activity}', a.phrase)
+    .replace('{conditions}', c.phrase)
+    .replace('{primary}', lowerFirst(pair[0]))
+    .replace('{secondary}', pair[1]);
+
+  return body + '\n\nWant me to help with anything else?';
+}
+
+/* ============================================================
+   2. INTENTS
+   Each intent is a list of phrases and keywords with weights.
+   Multi word entries match as a phrase, single words match as
+   a whole token, so "order" never fires inside "border".
+   Declaration order is the tie breaker of last resort.
+   ============================================================ */
+
+var MIN_SCORE = 1;
+
+/* A yes, a no, or a thanks is a short reply. Past this many tokens the user is
+   saying something else that happens to contain the word, so the short answer
+   patterns stop applying and normal matching takes over. */
+var SHORT_ANSWER_TOKENS = 5;
+
+/* Catalog questions. Listed once, used both as PRODUCT_REC patterns and as the
+   trigger for the "what we carry" line in front of the first question. */
+var CATALOG_PHRASES = [
+  'what products do you have', 'what do you sell', 'what all products',
+  'what gear do you have', 'what all gears', 'what do you have',
+  'show me products', 'browse products', 'what kind of gear',
+  'product catalog', 'catalog', 'what do you carry',
+  'services', 'what services', 'what are the services', 'products or services',
+  'what do you guys have', 'what do you guys sell', 'what all do you have',
+  'what all you have'
+];
+
+var INTENT_SOURCE = [
+  { name:'LIVE_AGENT', phrases:[
+      'live agent','talk to a human','talk to someone','real person','speak to an agent',
+      'speak to a human','customer service rep','customer service','representative',
+      'talk to support','get me a person','connect me with someone',
+      /* the ways people ask for a human without using the word human */
+      'a colleague','your colleague','deal with a colleague','your team','my case to someone',
+      'your manager','the manager','speak to a manager','an employee','actual employee',
+      'escalate this','anyone else','someone else','another person','a supervisor',
+      'member of your team','speak with staff','with staff','transfer me','put me through',
+      'call me','pass me to','hand me over','who can actually help',
+      /* asking for a person without naming one, and asking to be connected */
+      'speak to someone','speak with someone','talk with someone','speak to a person',
+      'talk to a person','with a person','connect me','get me someone','need a person',
+      'contact support','to support','with support','support team',
+      /* the agent was introduced by name one message earlier */
+      'riley','speak to riley','talk to riley','get riley','connect me to riley'
+    ], phraseWeight:3,
+    keywords:['human','agent','operator','rep','colleague','manager','employee','staff',
+      'supervisor','escalate','transfer'], keywordWeight:3 },
+
+  /* `back`, `home`, `options` and `help` sit at weight 1, not 3. At 3 the bare
+     word `back` outranked RETURNS in "can i send this thing back to you", and
+     `options` outranked SHIPPING in "what are my options for shipping". At 1
+     each still wins when typed alone as navigation, and loses to any longer,
+     more specific phrase around it. `menu` and `restart` mean nothing else, so
+     they stay at 3. */
+  /* "what can you do" moved to CAPABILITY: inside the handoff it is a question
+     to answer, not a request to leave. */
+  { name:'MENU_RESET', phrases:['main menu','start over','back to main menu','go back'], phraseWeight:3,
+    keywords:['menu','restart'], keywordWeight:3,
+    low:['back','home','options','help','what else'], lowMaxTokens:SHORT_ANSWER_TOKENS },
+
+  { name:'ORDER_TRACKING', phrases:[
+      'where is my order','wheres my order','track my package','track my order','order status',
+      'check my order','did my order ship','has my order shipped','when will my order arrive',
+      'where is my package','wheres my package','wheres my stuff','delivery status',
+      'status of my order','where is order','wheres order','track order','check order','my order',
+      'where is my',
+      /* how a late delivery actually gets reported */
+      'havent received','have not received','not received','still havent got','still waiting',
+      'taking too long','been so many days','its late','is late','order is late','never arrived',
+      'hasnt arrived','has not arrived','not here yet','still nothing','no sign of it',
+      'order is not coming','not coming','where is it','whens it coming','when is it coming',
+      'when will it get here','when will it arrive','should have arrived','way past','past the date',
+      'nothing has turned up','still not here','any update on my','update on my order',
+      'been waiting','waiting on my','chasing my','what happened to my',
+      /* the same question with none of the words above in it */
+      'shown up','showed up','turned up','never showed','nothing came','nothing has come',
+      'when will it come','when it gets to me','gets to me','get to me','get here','got lost',
+      'is it lost','check on my','checking on my','any update','no update','still havent',
+      'still have not','what is happening with','whats happening with','did you send',
+      'have you sent','you sent my','did it ship','days already','days now','weeks now',
+      'empty handed','my purchase','the box','my parcel','my delivery','my stuff','i paid',
+      'on its way','out for delivery','left the warehouse',
+      /* "has it shipped yet" asks about an order without naming one */
+      'has it shipped','shipped yet','is it shipped','was it shipped','has this shipped',
+      'did this ship','on the way yet','gone out yet','left yet'
+    ], phraseWeight:2,
+    keywords:['tracking','track','order','package','shipment','parcel','delayed','undelivered',
+      'purchase','shipped','dispatched'], keywordWeight:1 },
+
+  { name:'RETURNS', phrases:[
+      'return policy','how do i return','i want to return','can i return this','send it back',
+      'swap this','wrong size','doesnt fit','does not fit','too small','too big','return this',
+      /* damage and wrong item language */
+      'my item was damaged','arrived damaged','item is broken','it was crushed','came broken',
+      /* damage reported about a named thing, so it outranks the weak order
+         signal in a sentence like "my package was crushed" */
+      'was crushed','was damaged','was broken','is damaged','is broken','is crushed',
+      'arrived broken','came damaged','turned up damaged','turned up broken',
+      'wrong item','not what i ordered','not what i wanted','different from the picture',
+      'get my money back','money back','give it back','change it for',
+      'swap it for','different size','another size','doesnt work for me','dont want it',
+      'do not want it','no longer need it','fell apart','stopped working','has a hole',
+      /* the same request with none of the words above in it */
+      'changed my mind','change my mind','undo this','undo my','store credit',
+      'money on the card','money back on','not going to work for me','came apart',
+      'i ordered the','send this back','send this thing back','send it all back','ship it back',
+      'take it back','no use to me','useless to me','not happy with','unhappy with',
+      'wrong colour','wrong color','wrong one','got the wrong','not as described'
+    ], phraseWeight:2,
+    /* `useless` is deliberately NOT here. It is a frustration word first, and as
+       a RETURNS keyword it swallowed "your useless" and answered with the return
+       policy. The multi word "useless to me" above still catches the product
+       complaint, which is the unambiguous case. */
+    keywords:['return','returns','exchange','exchanges','refund','defective','faulty','torn',
+      'ripped','crushed','broken','damaged','unused','snapped','cracked','leaking',
+      'shrunk'], keywordWeight:1 },
+
+  { name:'PRODUCT_REC', phrases:[
+      'what should i buy','product recommendation','recommend something','help me find',
+      'looking for gear','i need a jacket','need gear','what do you recommend','shopping for',
+      'help me pick','what gear','what do i need','what would you suggest','which one should i get',
+      'kitting out','getting into','first time','going on a trip','planning a trip','heading out',
+      /* the same request with none of the words above in it */
+      'what do you have for','what have you got for','what works for','what would work',
+      'best for','good for a','new to this','first timer','im going up','going up a',
+      'next month','weekend','what should i get','what to get','idea what to get',
+      'help me choose','help me decide','which one','something for my','for my brother',
+      'for my sister','for my wife','for my husband','for my dad','for my mum','for my mom',
+      'as a gift','cold weather','warm weather','wet weather','hot weather','the outdoors',
+      'outdoors','outdoorsy','starting out',
+      /* catalog and services questions, which map onto the same flow */
+      CATALOG_PHRASES[0], CATALOG_PHRASES[1], CATALOG_PHRASES[2], CATALOG_PHRASES[3],
+      CATALOG_PHRASES[4], CATALOG_PHRASES[5], CATALOG_PHRASES[6], CATALOG_PHRASES[7],
+      CATALOG_PHRASES[8], CATALOG_PHRASES[9], CATALOG_PHRASES[10], CATALOG_PHRASES[11],
+      CATALOG_PHRASES[12], CATALOG_PHRASES[13], CATALOG_PHRASES[14], CATALOG_PHRASES[15],
+      CATALOG_PHRASES[16], CATALOG_PHRASES[17], CATALOG_PHRASES[18], CATALOG_PHRASES[19],
+      /* the labels the product itself puts on screen, so typing them works */
+      'hiking','hiking and backpacking','backpacking','camping','winter sports','skiing',
+      'snowboarding','everyday outdoors','everyday outdoor',
+      'warm and dry','cool and variable','cold and snowy','wet and rainy'
+    ], phraseWeight:2,
+    keywords:['suggest','recommend','recommendation','gear','jacket','tent','boots','backpack',
+      'gloves','equipment','kit','beginner','mountain','present','gift','choose','decide'], keywordWeight:1,
+    /* multi word gear nouns, scored like keywords rather than like phrases */
+    low:['sleeping bag','base layer','rain shell','hiking boots','waterproof jacket','head torch'] },
+
+  /* Weight 3, so "cancel my order" is not read as an order lookup. */
+  { name:'UNSUPPORTED', phrases:[
+      'cancel my order','cancel the order','cancel order','cancel my purchase','cancel it',
+      'change my address','update my address','change the address','wrong address',
+      'change my order','modify my order','edit my order','amend my order','change the size on my order',
+      'reschedule delivery','change delivery date','add to my order','remove from my order'
+    ], phraseWeight:3, keywords:[], keywordWeight:3 },
+
+  /* Includes "i dont understand": telling a confused user that the bot does not
+     understand them is a mismatch, so it re-explains what it can do instead.
+     `explain` sits at weight 1 so "explain exchanges" stays a returns question. */
+  { name:'CAPABILITY', phrases:[
+      'what can you help me with','what can you do','what do you do','what do you help with',
+      'how can you help','what are your options','what can i ask you','what all can you do',
+      'what can i do here','what else can you do',
+      'i dont understand','i didnt understand','i do not understand','what do you mean',
+      'im confused','i am confused','not following you','you lost me',
+      'didnt get that','didnt catch that','made no sense','doesnt make sense',
+      'that makes no sense','explain that again','say that again',
+      'is that all you can do','all you can do','that all you do','anything else you can do'
+    ], phraseWeight:2, keywords:[], keywordWeight:2,
+    low:['explain'] },
+
+  { name:'IDENTITY', phrases:[
+      'what is your name','whats your name','who are you','what are you',
+      'what should i call you','your name','who am i talking to'
+    ], phraseWeight:2, keywords:[], keywordWeight:2 },
+
+  { name:'CONTACT', phrases:[
+      'your website','send your website','whats your site','what is your website',
+      'phone number','contact number','email address','how do i contact you',
+      'customer service number','your site','a link','send me a link'
+    ], phraseWeight:2, keywords:[], keywordWeight:2 },
+
+  /* Gated to short messages. "thanks" is a sign off, but the word inside a long
+     sentence is not, and a rant that happens to contain it must not be
+     answered with "Anytime". */
+  { name:'COURTESY', phrases:[
+      'thank you','appreciate it','awesome thanks','perfect thanks','see ya','thats it',
+      'thank u','much appreciated','have a good one','take care','catch you later'
+    ], phraseWeight:2,
+    keywords:['thanks','thx','ty','cheers','bye','goodbye','later','done'], keywordWeight:2,
+    maxTokens:SHORT_ANSWER_TOKENS },
+
+  { name:'SHIPPING', phrases:[
+      'how long does shipping take','shipping options','shipping times','how fast is delivery',
+      'expedited shipping','standard shipping','delivery time','how long to ship',
+      'how long does delivery take'
+    ], phraseWeight:2,
+    keywords:['shipping','expedited'], keywordWeight:1 },
+
+  /* Weight 3, so a price question beats the gear noun sitting next to it in
+     "how much does a tent cost". Shipping cost was deliberately removed from
+     the SHIPPING list above: the brief gives shipping times, never prices. */
+  { name:'UNAVAILABLE', phrases:[
+      'how much does','how much is','how much are','how much do','how much',
+      'what does it cost','what is the price','whats the price','price of','the price',
+      'cost of','what do you charge','on sale','any discount','discount code','promo code',
+      'coupon','which carrier','what carrier','who delivers','who ships it',
+      'in stock','stock level','is it available','do you have any left'
+    ], phraseWeight:3,
+    keywords:['price','prices','pricing','cost','costs','discount','sale','carrier','stock'], keywordWeight:2 },
+
+  { name:'GREETING', phrases:['good morning','good afternoon','good evening'], phraseWeight:2,
+    keywords:['hi','hello','hey','yo','howdy','hiya'], keywordWeight:2 }
+];
+
+/* Contextual only. These are consulted inside ORDER_333_FOLLOWUP. */
+var DENY_PATTERNS = [
+  'no','nope','not really','nah','there is a problem','theres a problem','damaged','broken',
+  'wrong item','wrong size','missing','i need to return','need to return','not good'
+];
+var AFFIRM_PATTERNS = [
+  'yes','yeah','yep','yup','sure','all good','it did','looks good','great','perfect','fine'
+];
+
+/* Contextual only. Answers to the bot's own "Anything else?" question,
+   consulted at MENU while `awaitingAnythingElse` is true. */
+var CLOSING_DENY_PATTERNS = [
+  'no','nope','no thanks','nah','thats all','that is all','im good','i am good','all set',
+  'nothing else','that will be all','no im good'
+];
+var CLOSING_AFFIRM_PATTERNS = ['yes','yeah','yep','sure','please','yes please'];
+
+/* Negation. If one of these sits within three tokens BEFORE a matched intent
+   phrase, that intent is suppressed. `no` and `not` are common enough that they
+   only count in messages longer than three tokens, so a bare "no" answering a
+   question keeps its normal meaning. A marker at the same index as the match is
+   part of the phrase itself ("never arrived") and does not negate it. */
+var NEGATION_TOKENS = ['dont', 'not', 'never', 'no', 'nevermind'];
+var WEAK_NEGATION_TOKENS = ['no', 'not'];
+var NEGATION_WINDOW = 3;
+
+/* Idioms where the marker means "I don't know", not "do not do this".
+   "i have no idea what to get" is a request for help, not a refusal of one. */
+var NEGATION_EXCEPTIONS = ['no idea', 'no clue', 'not sure', 'no luck', 'not certain'];
+
+/* A negation reaches forward until the user pivots to what they DO want.
+   "dont tell me about shipping just find my package" negates shipping and
+   leaves the package request standing; "no bot i want human" negates the bot
+   and leaves the request for a human standing. */
+var NEGATION_STOP_MARKERS = [
+  'just', 'instead', 'but', 'however', 'though',
+  'want to', 'i want', 'i need', 'need to', 'i would', 'id like', 'id like to', 'i just'
+];
+var NEGATION_MAX_REACH = 8;
+
+/* ---- "order" as a verb versus "order" as a noun ----
+   "i want to order something" is a purchase. "where is my order" is a lookup.
+   Getting this wrong meant telling someone who said they had not ordered yet to
+   hand over an order number, four messages in a row. */
+var PURCHASE_MARKERS = [
+  'want to','wanna','like to','id like to','i want','going to','need to',
+  'place an','place a','make an','make a','put in an','trying to','looking to'
+];
+var PURCHASE_PHRASES = [
+  'havent ordered','have not ordered','not ordered yet','didnt order','before i order',
+  'order something','order some','order anything','buy something','want to buy','want to purchase'
+];
+var LOOKUP_PHRASES = [
+  'my order','the order','this order','order number','order status','track','tracking','where is',
+  'an order i placed','order i made','order i placed','existing order','look up an order',
+  'look up my order','my purchase','the purchase','my package','my parcel','my delivery','my stuff'
+];
+/* Unambiguous purchase verbs. These must never reach order tracking. */
+var PURCHASE_WORDS = ['buy','buying','shop','shopping'];
+/* Ambiguous both ways, so they get the disambiguation treatment. */
+var ORDER_WORDS = ['order','ordering','ordered','orders','purchase','purchasing'];
+
+/* Cancels whatever is in progress. Only consulted when nothing else matched, so
+   "nevermind, i want to buy gears" still routes to the gear flow. */
+var NEVERMIND_PATTERNS = ['nevermind', 'never mind', 'forget it', 'forget that'];
+
+/* Frustration is a LAST RESORT, deliberately outside the weighted competition.
+   An annoyed customer who asks a clear question gets the answer, not an
+   escalation and not a comment on their tone. "i said give your exchange policy
+   idiot" is a returns question that happens to contain an insult. */
+var FRUSTRATION_PATTERNS = [
+  'idiot','stupid','useless','annoying','dumb','terrible','awful','worst','wtf','rubbish',
+  'are you slow','dont you understand','do you understand','oh my god','for gods sake',
+  'this is ridiculous','waste of time','not working','you suck','what the hell',
+  'so annoying','this is stupid','are you dumb','so slow','not helpful',
+  'how is that helpful','just answer the question','answer the question',
+  'are you even reading','third time im asking','doesnt answer my question',
+  'didnt answer my question','you didnt answer'
+];
+
+/* Getting the bot back requires asking to be moved, not just saying "bot".
+   "you are acting like a bot" is a complaint, not a transfer request. */
+var MOVEMENT_MARKERS = [
+  'back','return','transfer','switch','go to','put me','send me','speak to','talk to',
+  'connect me to','hand me','take me'
+];
+
+/* Not knowing is a normal answer to a recommendation question. */
+/* "I don't know" in the order flow. Acknowledged, but still counted as a miss:
+   unlike the gear flow, not knowing here does not move the lookup forward. */
+var ORDER_UNSURE_PATTERNS = [
+  'not sure','i dont know','dont know','dont remember','no idea','cant remember',
+  'dont have it','i dont have it','no clue','forgot','cannot remember','lost it'
+];
+
+/* Activities we genuinely do not carry gear for, so they are not forced into
+   one of the four categories. */
+var REC_OUT_OF_SCOPE_PATTERNS = [
+  'sky diving','skydiving','skydive','scuba','diving','surfing','surf','swimming','swim',
+  'golf','tennis','gym','indoor','football','basketball','sailing','motorbike'
+];
+
+var REC_UNSURE_PATTERNS = [
+  'not sure','i dont know','dont know','no idea','you tell me','you decide','whatever',
+  'anything','im not sure','not really sure','just show me','give me options','all of them',
+  'broad idea','not decided','no preference','either','doesnt matter'
+];
+
+/* Asking to return something while being asked "did it arrive in good shape" is
+   a no, however it is phrased. Not length gated, so it still resolves in one
+   turn when the sentence is long or carries a negation elsewhere in it. */
+var FOLLOWUP_RETURN_PATTERNS = [
+  'want to return','i want to return','need to return','like to return','have to return',
+  'return it','return this','return them','send it back','send this back','get a refund'
+];
+
+/* Ways out of the gear flow that are not a plain no. */
+var REC_CANCEL_PATTERNS = ['nothing','none','nothing really','no thanks','forget it','skip it','cancel','not now'];
+
+/* The already-connected reply needs an actual request to transfer. A question
+   about the team is not one. */
+var TRANSFER_VERBS = ['speak','talk','connect','transfer','want','need','get me','put me'];
+
+/* Contextual only, and only inside LIVE_AGENT. Outranks everything, because a
+   user asking for the bot back was previously being told they were already
+   connected to Riley, over and over. */
+var RETURN_TO_BOT_PATTERNS = [
+  'back to bot','back to the bot','back to support bot','back to the support bot',
+  'support bot','transfer back','transfer me back','transfer back to bot',
+  'go back to bot','return to bot','normal chatbot','the chatbot','chatbot','bot',
+  'back to the chatbot','put me back','send me back'
+];
+
+/* Contextual only. Consulted inside LIVE_AGENT before anything else, so a
+   direct question about the agent is answered honestly. */
+var AGENT_IDENTITY_PATTERNS = [
+  'are you a bot','are you ai','are you real','are you human','is this a bot','are you a robot',
+  'am i talking to a person','am i talking to a bot','are you a chatbot','is this automated',
+  'are you a machine','is this a real person'
+];
+var AGENT_TIMING_PATTERNS = [
+  'when will you reach out','when will they reach out','when will i hear back','how long will it take',
+  'when will you reply','how soon','how long until','when can i expect','when do i hear back',
+  'how long do i wait'
+];
+
+/* ============================================================
+   3. MATCHER
+   Normalize, then score. Highest total weight wins. Ties break
+   on the longest matched pattern, then on declaration order.
+   ============================================================ */
+
+function normalize(text){
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9#\s]+/g, '')  /* strip punctuation, keep # */
+    .replace(/\s+/g, ' ')
+    .replace(/^ | $/g, '');
+}
+
+/* Token indexes that begin a new clause, derived from the raw text before
+   punctuation is stripped. A negation must not reach past one of these:
+   "i dont like it, want to return" is "not X, but Y", never "not Y".
+   Walks the input the same way normalize does, so the indexes line up. */
+var CLAUSE_PUNCTUATION = ',;.!?:';
+function clauseBreaks(raw){
+  var lower = String(raw).toLowerCase();
+  var stripped = '';
+  var breakAtOffset = {};
+  var sawBreak = false;
+  for(var i = 0; i < lower.length; i++){
+    var ch = lower.charAt(i);
+    if(/[a-z0-9#]/.test(ch)){
+      if(sawBreak){ breakAtOffset[stripped.length] = true; sawBreak = false; }
+      stripped += ch;
+    } else if(/\s/.test(ch)){
+      stripped += ' ';
+    } else if(CLAUSE_PUNCTUATION.indexOf(ch) !== -1){
+      sawBreak = true;   /* dropped from the text, exactly like normalize */
+    }
+  }
+  var breaks = {};
+  var re = /[^\s]+/g;
+  var m;
+  var index = 0;
+  while((m = re.exec(stripped)) !== null){
+    if(breakAtOffset[m.index]){ breaks[index] = true; }
+    index += 1;
+  }
+  return breaks;
+}
+
+/* A second form with plural s stripped from tokens of four or more characters,
+   so "gears" reaches "gear" and "orders" reaches "order". Both forms are scored
+   and the higher one wins, so stemming can only ever add a match, never remove
+   one. The four character floor keeps "yes", "has" and "was" intact. */
+function stem(norm){
+  return norm.split(' ').map(function(t){
+    return (t.length >= 4 && t.charAt(t.length - 1) === 's') ? t.slice(0, -1) : t;
+  }).join(' ');
+}
+
+function buildPattern(raw, weight, maxTokens){
+  var text = normalize(raw);
+  return { text: text, weight: weight, words: text.split(' ').length, maxTokens: maxTokens || 0 };
+}
+
+var INTENTS = INTENT_SOURCE.map(function(src){
+  var patterns = [];
+  var seen = {};
+  var i;
+  function add(raw, weight, cap){
+    var p = buildPattern(raw, weight, cap);
+    if(seen[p.text]){ return; }   /* a duplicate would silently double its weight */
+    seen[p.text] = true;
+    patterns.push(p);
+  }
+  for(i = 0; i < src.phrases.length; i++){ add(src.phrases[i], src.phraseWeight, src.maxTokens); }
+  for(i = 0; i < src.keywords.length; i++){ add(src.keywords[i], src.keywordWeight, src.maxTokens); }
+  if(src.low){
+    for(i = 0; i < src.low.length; i++){ add(src.low[i], 1, src.lowMaxTokens || src.maxTokens); }
+  }
+  return { name: src.name, patterns: patterns };
+});
+
+function buildList(raw){ return raw.map(function(p){ return buildPattern(p, 1); }); }
+
+var DENY = buildList(DENY_PATTERNS);
+var AFFIRM = buildList(AFFIRM_PATTERNS);
+var CLOSING_DENY = buildList(CLOSING_DENY_PATTERNS);
+var CLOSING_AFFIRM = buildList(CLOSING_AFFIRM_PATTERNS);
+var AGENT_IDENTITY = buildList(AGENT_IDENTITY_PATTERNS);
+var AGENT_TIMING = buildList(AGENT_TIMING_PATTERNS);
+var COURTESY_CLOSE = buildList(['bye','goodbye','see ya','later','thats it','that is it','done','take care','catch you later','have a good one']);
+var CATALOG = buildList(CATALOG_PHRASES);
+var NEVERMIND = buildList(NEVERMIND_PATTERNS);
+var RETURN_TO_BOT = buildList(RETURN_TO_BOT_PATTERNS);
+var FRUSTRATION = buildList(FRUSTRATION_PATTERNS);
+var REC_CANCEL = buildList(REC_CANCEL_PATTERNS);
+var TRANSFER_REQUEST = buildList(TRANSFER_VERBS);
+var MOVEMENT = buildList(MOVEMENT_MARKERS);
+var REC_UNSURE = buildList(REC_UNSURE_PATTERNS);
+var REC_OUT_OF_SCOPE = buildList(REC_OUT_OF_SCOPE_PATTERNS);
+var ORDER_UNSURE = buildList(ORDER_UNSURE_PATTERNS);
+var FOLLOWUP_RETURN = buildList(FOLLOWUP_RETURN_PATTERNS);
+var PURCHASE_PHRASE_LIST = buildList(PURCHASE_PHRASES);
+var LOOKUP_PHRASE_LIST = buildList(LOOKUP_PHRASES);
+
+/* Which sense of "order" the message means: 'purchase', 'lookup', 'ask', or
+   null when the question does not arise. A marker before the word only settles
+   it when there is an object after it, so a bare "i want to order" is asked
+   about rather than guessed at. */
+function orderSense(norm){
+  var tokens = norm.split(' ');
+  var i, j;
+
+  var hasPurchaseWord = false;
+  for(i = 0; i < PURCHASE_WORDS.length; i++){
+    if(tokens.indexOf(PURCHASE_WORDS[i]) !== -1){ hasPurchaseWord = true; break; }
+  }
+
+  var orderIdx = -1;
+  for(i = 0; i < tokens.length; i++){
+    if(ORDER_WORDS.indexOf(tokens[i]) !== -1){ orderIdx = i; break; }
+  }
+
+  if(orderIdx === -1 && !hasPurchaseWord){ return null; }
+  if(hasPurchaseWord){ return 'purchase'; }
+  if(matchList(norm, PURCHASE_PHRASE_LIST)){ return 'purchase'; }
+
+  /* A number in the message settles it: you cannot buy an order number. */
+  if(/\d/.test(norm)){ return 'lookup'; }
+
+  /* an intent-to-act marker just before the word, with an object after it */
+  var markerBefore = false;
+  for(i = 0; i < PURCHASE_MARKERS.length; i++){
+    var marker = PURCHASE_MARKERS[i].split(' ');
+    for(j = Math.max(0, orderIdx - NEGATION_WINDOW); j < orderIdx; j++){
+      var hit = true;
+      for(var k = 0; k < marker.length; k++){ if(tokens[j + k] !== marker[k]){ hit = false; break; } }
+      if(hit && j + marker.length <= orderIdx){ markerBefore = true; break; }
+    }
+    if(markerBefore){ break; }
+  }
+  if(markerBefore && orderIdx < tokens.length - 1){ return 'purchase'; }
+
+  if(matchList(norm, LOOKUP_PHRASE_LIST)){ return 'lookup'; }
+
+  /* An order word with nothing to settle it either way. Ask rather than guess:
+     "how do i order" and "can i order online" are not order-number requests. */
+  return 'ask';
+}
+
+/* A known order number sitting anywhere in the message, as a whole token. */
+function standaloneOrderToken(norm){
+  var tokens = norm.split(' ');
+  for(var i = 0; i < tokens.length; i++){
+    var t = tokens[i].charAt(0) === '#' ? tokens[i].slice(1) : tokens[i];
+    if(Object.prototype.hasOwnProperty.call(ORDERS, t)){ return t; }
+  }
+  return null;
+}
+
+function patternHits(pattern, norm, tokens){
+  if(pattern.words > 1){ return norm.indexOf(pattern.text) !== -1; }
+  return tokens.indexOf(pattern.text) !== -1;
+}
+
+function matchListOne(norm, list){
+  var tokens = norm.split(' ');
+  for(var i = 0; i < list.length; i++){
+    if(patternHits(list[i], norm, tokens)){ return true; }
+  }
+  return false;
+}
+
+function matchList(norm, list){
+  return matchListOne(norm, list) || matchListOne(stem(norm), list);
+}
+
+/* Yes and no only count as answers in a short reply. "no" is an answer,
+   "no i already told you that number was wrong" is a sentence. */
+function matchShortList(norm, list){
+  if(norm.split(' ').length > SHORT_ANSWER_TOKENS){ return false; }
+  return matchList(norm, list);
+}
+
+/* ---- typo tolerance ----
+   Scoped tightly: a fixed word list, one substitution per message, and only
+   consulted when exact and stemmed matching have both found nothing, so an
+   exact match can never lose to a guess. */
+var FUZZY_WORDS = [
+  'order','orders','return','returns','exchange','exchanges','shipping','tracking','track',
+  'package','agent','human','refund','cancel','policy','deliver','delivery','product',
+  'products','jacket','camping','hiking','understand'
+];
+var FUZZY_MIN_LEN = 4;
+
+/* Real words that happen to sit one edit from a target. Without this, "are you
+   hiring" becomes "are you hiking" and lands in the gear flow. */
+var FUZZY_BLOCKLIST = [
+  'hiring','firing','wiring','hiding','biking','liking','older','police','policies',
+  'cancer','truck','trucks','trace','trick','skipping','trucking','capping','carping',
+  'jacked','racket','packet','borders','packed','ranking','banking'
+];
+
+/* True when one edit apart: substitution, insertion, deletion, or a swap of two
+   neighbours. The swap case is what catches "retrun" and "poilcy". */
+function withinOneEdit(a, b){
+  if(a === b){ return true; }
+  var la = a.length, lb = b.length;
+  if(Math.abs(la - lb) > 1){ return false; }
+
+  if(la === lb){
+    var diffs = [];
+    for(var i = 0; i < la; i++){
+      if(a.charAt(i) !== b.charAt(i)){
+        diffs.push(i);
+        if(diffs.length > 2){ return false; }
+      }
+    }
+    if(diffs.length === 1){ return true; }
+    return diffs.length === 2 && diffs[1] === diffs[0] + 1 &&
+           a.charAt(diffs[0]) === b.charAt(diffs[1]) && a.charAt(diffs[1]) === b.charAt(diffs[0]);
+  }
+
+  var shortWord = la < lb ? a : b;
+  var longWord = la < lb ? b : a;
+  var si = 0, li = 0, skipped = false;
+  while(si < shortWord.length && li < longWord.length){
+    if(shortWord.charAt(si) === longWord.charAt(li)){ si++; li++; continue; }
+    if(skipped){ return false; }
+    skipped = true;
+    li++;
+  }
+  return true;
+}
+
+/* One corrected form of the message, or null if nothing needed correcting. */
+function fuzzyForm(norm){
+  var tokens = norm.split(' ');
+  for(var i = 0; i < tokens.length; i++){
+    var t = tokens[i];
+    if(t.length < FUZZY_MIN_LEN){ continue; }
+    if(FUZZY_WORDS.indexOf(t) !== -1){ continue; }
+    if(FUZZY_BLOCKLIST.indexOf(t) !== -1){ continue; }
+    for(var j = 0; j < FUZZY_WORDS.length; j++){
+      if(withinOneEdit(t, FUZZY_WORDS[j])){
+        var out = tokens.slice();
+        out[i] = FUZZY_WORDS[j];
+        return out.join(' ');   /* one substitution per message, then stop */
+      }
+    }
+  }
+  return null;
+}
+
+/* Token start offsets, so a substring match can be located by token index. */
+function tokenOffsets(tokens){
+  var starts = [];
+  var pos = 0;
+  for(var i = 0; i < tokens.length; i++){ starts.push(pos); pos += tokens[i].length + 1; }
+  return starts;
+}
+
+function tokenIndexAt(starts, charIndex){
+  for(var i = starts.length - 1; i >= 0; i--){ if(starts[i] <= charIndex){ return i; } }
+  return 0;
+}
+
+/* Where a pattern begins, as a token index, or -1 if it does not match. */
+function patternIndex(pattern, norm, tokens, starts){
+  if(pattern.words > 1){
+    var at = norm.indexOf(pattern.text);
+    return at === -1 ? -1 : tokenIndexAt(starts, at);
+  }
+  return tokens.indexOf(pattern.text);
+}
+
+function negationIndexes(tokens){
+  var out = [];
+  for(var i = 0; i < tokens.length; i++){
+    var t = tokens[i];
+    if(NEGATION_TOKENS.indexOf(t) === -1){ continue; }
+    /* bare "no" and "not" only count in a message long enough to be a sentence */
+    if(WEAK_NEGATION_TOKENS.indexOf(t) !== -1 && tokens.length <= NEGATION_WINDOW){ continue; }
+    /* and not when they open an "I don't know" idiom */
+    if(NEGATION_EXCEPTIONS.indexOf(t + ' ' + (tokens[i + 1] || '')) !== -1){ continue; }
+    out.push(i);
+  }
+  return out;
+}
+
+/* How far forward a negation at `from` reaches: to the pivot marker if there is
+   one, otherwise a few tokens, capped so one "dont" cannot negate a paragraph. */
+function negationReach(tokens, from, breaks){
+  var limit = Math.min(tokens.length, from + 1 + NEGATION_MAX_REACH);
+  for(var i = from + 1; i < limit; i++){
+    if(breaks && breaks[i]){ return i; }   /* a new clause, so the negation ends here */
+    for(var m = 0; m < NEGATION_STOP_MARKERS.length; m++){
+      var marker = NEGATION_STOP_MARKERS[m].split(' ');
+      var hit = true;
+      for(var j = 0; j < marker.length; j++){ if(tokens[i + j] !== marker[j]){ hit = false; break; } }
+      if(hit){ return i; }
+    }
+  }
+  return limit;
+}
+
+function isNegated(negIdx, matchIdx, tokens, breaks){
+  for(var i = 0; i < negIdx.length; i++){
+    var from = negIdx[i];
+    if(matchIdx <= from){ continue; }             /* the match starts at or before the marker */
+    if(matchIdx < negationReach(tokens, from, breaks)){ return true; }
+  }
+  return false;
+}
+
+/* Scores one normalized form. Returns the winner plus any intent that only
+   failed because the user negated it, so the caller can respond to the negation
+   rather than silently doing nothing. */
+/* Clause boundaries for the turn in flight. Set once per message from the raw
+   text, because normalize has already thrown the punctuation away by the time
+   the scorer sees it. */
+var currentClauseBreaks = {};
+
+function matchIntentForm(norm){
+  var tokens = norm.split(' ');
+  var starts = tokenOffsets(tokens);
+  var negIdx = negationIndexes(tokens);
+  var breaks = currentClauseBreaks;
+  var best = { intent:null, score:0, length:0, suppressed:[] };
+  var suppressed = [];
+
+  for(var i = 0; i < INTENTS.length; i++){
+    var def = INTENTS[i];
+    var hits = [];
+    var leftmost = -1;
+    for(var j = 0; j < def.patterns.length; j++){
+      var p = def.patterns[j];
+      if(p.maxTokens && tokens.length > p.maxTokens){ continue; }
+      var at = patternIndex(p, norm, tokens, starts);
+      if(at === -1){ continue; }
+      hits.push(p);
+      if(leftmost === -1 || at < leftmost){ leftmost = at; }
+    }
+    if(!hits.length){ continue; }
+
+    /* Negation is judged against where the intent first appears. That way
+       "dont connect me with live agent" is suppressed by the `connect me` at
+       the front, while "no update since i paid" is not, because the intent
+       starts at `no update` itself rather than after the negation. */
+    if(negIdx.length && isNegated(negIdx, leftmost, tokens, breaks)){ suppressed.push(def.name); continue; }
+
+    var score = 0;
+    var longest = 0;
+    for(var k = 0; k < hits.length; k++){
+      score += hits[k].weight;
+      if(hits[k].text.length > longest){ longest = hits[k].text.length; }
+    }
+    if(score < MIN_SCORE){ continue; }
+    if(score > best.score || (score === best.score && longest > best.length)){
+      best = { intent: def.name, score: score, length: longest, suppressed: [] };
+    }
+  }
+  best.suppressed = suppressed;
+  return best;
+}
+
+/* Plain form and stemmed form are both scored; the better one wins. A typo
+   corrected form is only consulted when neither found anything and nothing was
+   negated, so an exact match always beats a guess and no existing input can
+   change behaviour. */
+function matchIntent(norm){
+  var plain = matchIntentForm(norm);
+  var stemmed = matchIntentForm(stem(norm));
+  var winner = (stemmed.score > plain.score) ? stemmed : plain;
+
+  if(!winner.intent && !plain.suppressed.length && !stemmed.suppressed.length){
+    var corrected = fuzzyForm(norm);
+    if(corrected){
+      var fuzzy = matchIntentForm(corrected);
+      if(fuzzy.intent){
+        return { intent: fuzzy.intent, score: 1, length: fuzzy.length, suppressed: [], fuzzy: true };
+      }
+    }
+  }
+
+  if(!winner.suppressed.length){
+    winner.suppressed = plain.suppressed.length ? plain.suppressed : stemmed.suppressed;
+  }
+  return winner;
+}
+
+/* Order numbers. Tolerates 111, #111, order 111, and 1 1 1. */
+function extractOrderNumber(norm){
+  var m = norm.match(/\d(?:[ ]?\d)*/);
+  if(!m){ return null; }
+  return m[0].replace(/ /g, '');
+}
+
+function isBareOrderNumber(norm){
+  return /^#?\d(?:[ ]?\d)*$/.test(norm);
+}
+
+function matchOption(norm, options){
+  var tokens = norm.split(' ');
+  var i, j;
+  /* full label first, so "cold and snowy" cannot be caught by a shorter alias */
+  for(i = 0; i < options.length; i++){
+    if(norm.indexOf(normalize(options[i].label)) !== -1){ return options[i].id; }
+  }
+  for(i = 0; i < options.length; i++){
+    for(j = 0; j < options[i].aliases.length; j++){
+      if(patternHits(buildPattern(options[i].aliases[j], 1), norm, tokens)){ return options[i].id; }
+    }
+  }
+  return null;
+}
+
+function optionById(list, id){
+  for(var i = 0; i < list.length; i++){ if(list[i].id === id){ return list[i]; } }
+  return null;
+}
+
+function lowerFirst(s){ return s.charAt(0).toLowerCase() + s.slice(1); }
+
+/* ============================================================
+   4. STATE
+   States: MENU, AWAIT_ORDER, ORDER_333_FOLLOWUP, REC_Q1,
+   REC_Q2, LIVE_AGENT.
+   handle() is pure with respect to the DOM. It takes a session
+   plus raw user text and returns the turns to render. The UI
+   and the self-test panel both call this same function.
+   ============================================================ */
+
+function createSession(){
+  return {
+    state: 'MENU',
+    /* One counter for every way of being stuck, so misses of different kinds
+       still add up. Three strikes escalates, once per session. */
+    stuckCount: 0,
+    escalationUsed: false,
+    agentFollowUp: false,         /* Riley asked the delivered follow-up question */
+    recActivity: null,
+    recCondition: null,
+    awaitingAnythingElse: false,  /* the last bot message ended with "Anything else?" */
+    ackIndex: -1,                 /* rotates the live agent acknowledgments */
+    prefixIndex: -1,              /* rotates the live agent lookup prefixes */
+    recTemplateIndex: -1          /* rotates the recommendation result templates */
+  };
+}
+
+/* The closing questions the bot asks. If the last bot message ends with one of
+   these, a bare yes or no from the user is an answer to it, not a fallback. */
+var ANYTHING_ELSE_ENDINGS = [
+  'Anything else I can help with?',
+  'Anything else?',
+  'Want me to help with anything else?'
+];
+
+function endsWithAnythingElse(result){
+  if(!result){ return false; }
+  var last = null;
+  for(var i = 0; i < result.turns.length; i++){
+    if(result.turns[i].role === 'bot'){ last = result.turns[i].text; }
+  }
+  if(!last){ return false; }
+  for(var j = 0; j < ANYTHING_ELSE_ENDINGS.length; j++){
+    var ending = ANYTHING_ELSE_ENDINGS[j];
+    if(last.length >= ending.length && last.slice(-ending.length) === ending){ return true; }
+  }
+  return false;
+}
+
+function nextAgentAck(session){
+  session.ackIndex = (session.ackIndex + 1) % COPY.agentAcks.length;
+  return COPY.agentAcks[session.ackIndex];
+}
+
+function nextAgentPrefix(session){
+  session.prefixIndex = (session.prefixIndex + 1) % COPY.agentPrefixes.length;
+  return COPY.agentPrefixes[session.prefixIndex];
+}
+
+/* Riley only opens a flow the bot can finish, so a multi-turn request is handed
+   back: he says so, the divider drops, and the flow's first step runs in the
+   same turn with the state properly set. */
+function handBackToBot(session, openingText, openingQuick, nextState){
+  session.state = nextState;
+  session.stuckCount = 0;
+  return reply([
+    bot(COPY.agentHandback, true),
+    system(COPY.agentExitDivider),
+    bot(openingText)
+  ], openingQuick);
+}
+
+function courtesyText(norm){
+  return matchList(norm, COURTESY_CLOSE) ? COPY.closingDone : COPY.courtesyThanks;
+}
+
+/* Fills whichever recommendation slots the message answers and reports where
+   that leaves the flow. Used from MENU, from REC_Q1 and REC_Q2, and by Riley. */
+function recAdvance(session, norm, startFresh){
+  if(startFresh){
+    session.recActivity = null;
+    session.recCondition = null;
+  }
+  var activity = matchOption(norm, REC_ACTIVITIES);
+  var condition = matchOption(norm, REC_CONDITIONS);
+  if(activity){ session.recActivity = activity; }
+  if(condition){ session.recCondition = condition; }
+
+  if(session.recActivity && session.recCondition){
+    var text = recResultText(session, session.recActivity, session.recCondition);
+    session.recActivity = null;
+    session.recCondition = null;
+    return { text: text, state: 'MENU', quick: QUICK.menu };
+  }
+  if(session.recActivity){ return { text: COPY.recQ2, state: 'REC_Q2', quick: QUICK.recQ2 }; }
+  return { text: COPY.recQ1, state: 'REC_Q1', quick: QUICK.recQ1 };
+}
+
+function bot(text, fromAgent){ return { role:'bot', text:text, fromAgent: !!fromAgent }; }
+function system(text){ return { role:'system', text:text }; }
+function reply(turns, quick){ return { turns:turns, quick:quick }; }
+function prefixed(prefix, text){ return prefix ? prefix + '\n\n' + text : text; }
+
+/* Slot filling states where a global interrupt is acknowledged. */
+function isSlotFilling(state){
+  return state === 'AWAIT_ORDER' || state === 'REC_Q1' || state === 'REC_Q2';
+}
+
+var STUCK_LIMIT = 3;
+
+/* Every dead-end reply routes through here. Returns true when the user has been
+   stuck long enough that the bot should stop trying and fetch a person. */
+function countMiss(session){
+  session.stuckCount += 1;
+  return session.stuckCount >= STUCK_LIMIT && !session.escalationUsed;
+}
+
+function stuckEscalate(session){
+  session.escalationUsed = true;
+  return enterLiveAgent(session, [bot(COPY.stuckEscalation)]);
+}
+
+function enterLiveAgent(session, turns){
+  session.state = 'LIVE_AGENT';
+  session.stuckCount = 0;
+  turns.push(system(COPY.agentDivider));
+  turns.push(bot(COPY.agentIntro, true));
+  return reply(turns, QUICK.agent);
+}
+
+function resolveOrder(session, digits, prefix){
+  var record = ORDERS[digits];
+  if(!record){ return invalidOrder(session, prefix); }
+  session.state = record.next;
+  session.stuckCount = 0;   /* resolved, so the user is no longer stuck */
+  return reply([bot(prefixed(prefix, record.reply))], record.quick);
+}
+
+function invalidOrder(session, prefix){
+  if(countMiss(session)){ return stuckEscalate(session); }
+  session.state = 'AWAIT_ORDER';
+  return reply([bot(prefixed(prefix, COPY.invalidOrderFirst))], QUICK.invalidOrder);
+}
+
+function askForDigits(session){
+  if(countMiss(session)){ return stuckEscalate(session); }
+  session.state = 'AWAIT_ORDER';
+  return reply([bot(COPY.orderNumberPrompt)], QUICK.orderHelp);
+}
+
+/* "I don't know" in the order flow: acknowledged, but still a miss. */
+function orderNumberUnknown(session){
+  if(countMiss(session)){ return stuckEscalate(session); }
+  session.state = 'AWAIT_ORDER';
+  return reply([bot(COPY.orderNumberUnknown)], QUICK.orderHelp);
+}
+
+/* An unrecognized answer to a specific question re-asks that question and keeps
+   the state, so the user never loses the flow they were halfway through. The
+   second consecutive miss in the same slot escalates. */
+/* A no while being asked which gear they want reads as "get me out of this",
+   not as a failed answer. */
+function cancelRec(session){
+  session.state = 'MENU';
+  session.stuckCount = 0;
+  session.recActivity = null;
+  session.recCondition = null;
+  return reply([bot(COPY.recCancel)], QUICK.menu);
+}
+
+/* An unrecognized answer to a specific question re-asks that question and keeps
+   the state, so the user never loses the flow they were halfway through. */
+function slotReprompt(session, text, quick){
+  if(countMiss(session)){ return stuckEscalate(session); }
+  return reply([bot(text)], quick);
+}
+
+function fallback(session){
+  if(countMiss(session)){ return stuckEscalate(session); }
+  session.state = 'MENU';
+  return reply([bot(COPY.fallbackFirst)], QUICK.menu);
+}
+
+/* Runs a matched intent. `prefix` carries the switch acknowledgement
+   when the intent interrupted a slot filling state. */
+function runIntent(session, intent, norm, prefix){
+  session.stuckCount = 0;
+
+  if(intent === 'LIVE_AGENT'){
+    return enterLiveAgent(session, [bot(prefixed(prefix, COPY.agentConnecting))]);
+  }
+
+  if(intent === 'MENU_RESET'){
+    session.state = 'MENU';
+    session.stuckCount = 0;
+    return reply([bot(prefixed(prefix, COPY.menuReset))], QUICK.menu);
+  }
+
+  if(intent === 'GREETING'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.greetingIntent))], QUICK.menu);
+  }
+
+  if(intent === 'COURTESY'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, courtesyText(norm)))], QUICK.menu);
+  }
+
+  if(intent === 'IDENTITY'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.identityBot))], QUICK.menu);
+  }
+
+  if(intent === 'CONTACT'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.contact))], QUICK.menu);
+  }
+
+  if(intent === 'UNAVAILABLE'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.unavailable))], QUICK.menu);
+  }
+
+  /* Uses the identity copy, not the menu reset copy: opening with "Back to the
+     main menu" at someone who said "i dont understand" is the same incoherent
+     announcement problem as the switch-gears prefix. Same capability list. */
+  if(intent === 'CAPABILITY'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.identityBot))], QUICK.menu);
+  }
+
+  if(intent === 'UNSUPPORTED'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.unsupportedAction))], QUICK.menu);
+  }
+
+
+  if(intent === 'ORDER_TRACKING'){
+    session.stuckCount = 0;
+    var digits = extractOrderNumber(norm);
+    /* The number is already in the message, so do not ask for it again. */
+    if(digits){ return resolveOrder(session, digits, prefix); }
+    session.state = 'AWAIT_ORDER';
+    return reply([bot(prefixed(prefix, COPY.askOrder))], QUICK.none);
+  }
+
+  if(intent === 'RETURNS'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.returns))], QUICK.menu);
+  }
+
+  if(intent === 'SHIPPING'){
+    session.state = 'MENU';
+    return reply([bot(prefixed(prefix, COPY.shipping))], QUICK.menu);
+  }
+
+  /* The message may already name an activity or a condition, for instance when
+     the user types a quick reply label straight from the menu. Fill that slot
+     and skip the question rather than asking something already answered. */
+  if(intent === 'PRODUCT_REC'){
+    var step = recAdvance(session, norm, true);
+    session.state = step.state;
+    /* a catalog question gets an answer before it gets a question back */
+    var recText = matchList(norm, CATALOG) ? COPY.catalogIntro + '\n\n' + step.text : step.text;
+    return reply([bot(prefixed(prefix, recText))], step.quick);
+  }
+
+  return fallback(session);
+}
+
+/* Riley. Answers with the bot's own factual copy, so the provided data is word
+   for word identical, and never repeats an acknowledgment twice in a row. */
+function exitToMenu(session){
+  session.state = 'MENU';
+  session.stuckCount = 0;
+  return reply([system(COPY.agentExitDivider), bot(COPY.agentExit)], QUICK.menu);
+}
+
+function liveAgentTurn(session, norm){
+  var match = matchIntent(norm);
+  var tokens = norm.split(' ');
+
+  /* Asked directly, say what this is. These run before everything else because
+     "are you a bot" mentions the bot without asking to be sent back to it, and
+     "when will i hear back" ends in the navigation word `back`. */
+  if(matchList(norm, AGENT_IDENTITY)){ return reply([bot(COPY.agentIdentity, true)], QUICK.agent); }
+  if(matchList(norm, AGENT_TIMING)){ return reply([bot(COPY.agentTiming, true)], QUICK.agent); }
+
+  /* Getting back to the bot needs an actual request to be moved. Mentioning the
+     bot is not one: "you are acting like a bot" is a complaint. */
+  var mentionsBot = tokens.indexOf('bot') !== -1 || tokens.indexOf('chatbot') !== -1 ||
+                    matchList(norm, RETURN_TO_BOT);
+  /* "why did the bot transfer me" narrates a past transfer, it does not ask for
+     one. An interrogative opener plus a past auxiliary is a question. */
+  var narrating = /^(why|what|when|who|how)\b/.test(norm) && /\b(did|was|were|has|have)\b/.test(norm);
+  if(mentionsBot && matchList(norm, MOVEMENT) && !narrating){ return exitToMenu(session); }
+
+  /* Riley asked the 333 follow-up, so Riley handles the answer. */
+  if(session.agentFollowUp){
+    if(matchShortList(norm, DENY)){
+      session.agentFollowUp = false;
+      return reply([bot(COPY.followUpNo, true)], QUICK.agent);
+    }
+    if(matchShortList(norm, AFFIRM)){
+      session.agentFollowUp = false;
+      return reply([bot(COPY.agentFollowUpYes, true)], QUICK.agent);
+    }
+    session.agentFollowUp = false;
+  }
+
+  /* A known order number anywhere in the message, ahead of yes, no and thanks. */
+  var agentOrder = standaloneOrderToken(norm);
+  if(agentOrder){
+    session.agentFollowUp = (agentOrder === '333');
+    return reply([bot(prefixed(nextAgentPrefix(session), ORDERS[agentOrder].reply), true)], QUICK.agent);
+  }
+
+  if(match.intent === 'MENU_RESET'){ return exitToMenu(session); }
+
+  /* Only when they actually asked to be transferred. "who all are there in your
+     team" mentions the team but is a question, not a transfer request. */
+  if(match.intent === 'LIVE_AGENT' && matchList(norm, TRANSFER_REQUEST)){
+    return reply([bot(COPY.agentAlready, true)], QUICK.agent);
+  }
+
+  if(match.intent === 'CAPABILITY'){ return reply([bot(COPY.agentCapability, true)], QUICK.agent); }
+  if(match.intent === 'GREETING'){ return reply([bot(COPY.agentGreeting, true)], QUICK.agent); }
+
+  /* direct answers, no lookup prefix */
+  if(match.intent === 'IDENTITY'){ return reply([bot(COPY.identityAgent, true)], QUICK.agent); }
+  if(match.intent === 'CONTACT'){ return reply([bot(COPY.contact, true)], QUICK.agent); }
+  if(match.intent === 'UNAVAILABLE'){ return reply([bot(COPY.unavailable, true)], QUICK.agent); }
+
+  /* Riley's factual answers end with "Anything else?", so a bare yes or no is an
+     answer to that question and not something to file away unanswered. */
+  if(session.awaitingAnythingElse){
+    var agentClosing = matchShortList(norm, CLOSING_DENY) ? 'deny'
+                     : (matchShortList(norm, CLOSING_AFFIRM) ? 'affirm' : null);
+    if(agentClosing){
+      var alsoMatched = matchIntent(norm);
+      if(!alsoMatched.intent || alsoMatched.intent === 'COURTESY'){
+        return reply([bot(agentClosing === 'deny' ? COPY.agentClosing : nextAgentAck(session), true)], QUICK.agent);
+      }
+    }
+  }
+
+  if(match.intent === 'COURTESY'){ return reply([bot(courtesyText(norm), true)], QUICK.agent); }
+
+  /* ---- Group A, single shot. Riley answers with the bot's own copy. ---- */
+  if(match.intent === 'RETURNS'){ return reply([bot(prefixed(nextAgentPrefix(session), COPY.returns), true)], QUICK.agent); }
+  if(match.intent === 'SHIPPING'){ return reply([bot(prefixed(nextAgentPrefix(session), COPY.shipping), true)], QUICK.agent); }
+
+  if(match.intent === 'ORDER_TRACKING'){
+    var digits = extractOrderNumber(norm);
+    if(digits){
+      return ORDERS[digits]
+        ? reply([bot(prefixed(nextAgentPrefix(session), ORDERS[digits].reply), true)], QUICK.agent)
+        : reply([bot(COPY.agentUnknownOrder, true)], QUICK.agent);
+    }
+    /* ---- Group B, multi turn. No number to work with, so hand the slot
+            filling back to the bot rather than asking a question Riley
+            cannot process the answer to. ---- */
+    session.stuckCount = 0;
+    return handBackToBot(session, COPY.askOrder, QUICK.none, 'AWAIT_ORDER');
+  }
+
+  /* ---- Group B, multi turn ---- */
+  if(match.intent === 'PRODUCT_REC'){
+    var recStep = recAdvance(session, norm, true);
+    var opening = matchList(norm, CATALOG) ? COPY.catalogIntro + '\n\n' + recStep.text : recStep.text;
+    return handBackToBot(session, opening, recStep.quick, recStep.state);
+  }
+
+  /* A number typed to the agent is an order number, so answer it either way
+     rather than filing it as a note. */
+  if(isBareOrderNumber(norm)){
+    var bare = ORDERS[extractOrderNumber(norm)];
+    return bare
+      ? reply([bot(prefixed(nextAgentPrefix(session), bare.reply), true)], QUICK.agent)
+      : reply([bot(COPY.agentUnknownOrder, true)], QUICK.agent);
+  }
+
+  return reply([bot(nextAgentAck(session), true)], QUICK.agent);
+}
+
+function menuResetReply(session, prefix){
+  session.state = 'MENU';
+  session.stuckCount = 0;
+  return reply([bot(prefixed(prefix, COPY.menuReset))], QUICK.menu);
+}
+
+/* One entry point for the global matcher, used from every state. Returns null
+   when nothing applied, leaving the caller to run its own fallback.
+   Order matters: a real intent wins, then an explicit cancel, then a negation
+   that suppressed something, so "nevermind, i want to buy gears" still buys
+   gear and "dont connect me with a live agent" does not connect anyone. */
+/* "Sure, let's switch gears." belongs on a genuine mid-flow pivot only. Never on
+   a cancel, a courtesy, a frustration escalation, an offered chip, or anything
+   typed from the menu. */
+var PREFIXABLE_INTENTS = ['ORDER_TRACKING', 'RETURNS', 'SHIPPING', 'PRODUCT_REC', 'MENU_RESET', 'LIVE_AGENT'];
+var OFFERED_CHIPS = ['back to main menu', 'try again', 'talk to a live agent'];
+
+function switchPrefixFor(intent, norm, prefix){
+  if(!prefix){ return null; }
+  if(PREFIXABLE_INTENTS.indexOf(intent) === -1){ return null; }
+  if(OFFERED_CHIPS.indexOf(norm) !== -1){ return null; }
+  return prefix;
+}
+
+function globalTurn(session, norm, prefix){
+  /* Settle the sense of "order" before routing, so a purchase is never treated
+     as a lookup and nobody is asked for a number they do not have. */
+  var sense = orderSense(norm);
+  if(sense === 'purchase'){
+    return runIntent(session, 'PRODUCT_REC', norm, switchPrefixFor('PRODUCT_REC', norm, prefix));
+  }
+  if(sense === 'ask'){
+    session.state = 'MENU';
+    session.stuckCount = 0;
+    return reply([bot(COPY.orderSenseQuestion)], QUICK.orderSense);
+  }
+
+  var match = matchIntent(norm);
+  if(match.intent){
+    return runIntent(session, match.intent, norm, switchPrefixFor(match.intent, norm, prefix));
+  }
+
+  if(matchList(norm, NEVERMIND)){ return menuResetReply(session, null); }
+
+  /* A known order number sitting in the message is a real request even when the
+     wording matched nothing, as in "terrible service, when will 111 arrive". */
+  var loose = extractOrderNumber(norm);
+  if(loose && ORDERS[loose]){ return resolveOrder(session, loose, null); }
+
+  if(match.suppressed.length){
+    session.state = 'MENU';
+    session.stuckCount = 0;
+    var wasAgent = match.suppressed.indexOf('LIVE_AGENT') !== -1;
+    return reply([bot(wasAgent ? COPY.negatedAgent : COPY.negatedOther)], QUICK.menu);
+  }
+
+  /* Last resort only. Nothing the user asked for was recognized, and they are
+     clearly annoyed, so hand them to a person. No prefix, no lecture. */
+  if(matchList(norm, FRUSTRATION)){
+    return enterLiveAgent(session, [bot(COPY.frustration)]);
+  }
+
+  return null;
+}
+
+function route(session, norm){
+
+  /* ---- LIVE_AGENT ---- */
+  if(session.state === 'LIVE_AGENT'){ return liveAgentTurn(session, norm); }
+
+  /* A known order number anywhere in the message is a lookup, in any state and
+     ahead of yes, no and thanks. "no sorry 111" is a correction, not a goodbye. */
+  if(session.state !== 'AWAIT_ORDER'){
+    var known = standaloneOrderToken(norm);
+    if(known){
+      session.stuckCount = 0;
+      return resolveOrder(session, known, null);
+    }
+  }
+
+  /* ---- ORDER_333_FOLLOWUP: contextual yes and no first. This sits above the
+          closing question handling further down, so "no" here stays a delivery
+          problem and never becomes an answer to "Anything else?" ---- */
+  if(session.state === 'ORDER_333_FOLLOWUP'){
+    /* an explicit request to return is a no, however long the sentence */
+    if(matchList(norm, FOLLOWUP_RETURN)){
+      session.state = 'MENU';
+      session.stuckCount = 0;
+      return reply([bot(COPY.followUpNo)], QUICK.menu);
+    }
+    if(matchShortList(norm, DENY)){
+      session.state = 'MENU';
+      session.stuckCount = 0;
+      return reply([bot(COPY.followUpNo)], QUICK.menu);
+    }
+    if(matchShortList(norm, AFFIRM)){
+      session.state = 'MENU';
+      session.stuckCount = 0;
+      return reply([bot(COPY.followUpYes)], QUICK.menu);
+    }
+    /* a global interrupt still wins, but an unrecognized answer re-asks */
+    var followUpTurn = globalTurn(session, norm, null);
+    if(followUpTurn){ return followUpTurn; }
+    return slotReprompt(session, COPY.followUpReprompt, QUICK.delivered);
+  }
+
+  /* ---- AWAIT_ORDER: slot filling. Digits are a lookup. No digits is not a
+          failed lookup, so it goes to the global matcher and, failing that,
+          to a re-prompt, and every miss feeds the shared stuck counter ---- */
+  if(session.state === 'AWAIT_ORDER'){
+    var digits = extractOrderNumber(norm);
+    if(digits){ return resolveOrder(session, digits, null); }
+    /* Not knowing the number is an answer worth acknowledging, but it does not
+       move the lookup forward, so it still counts toward being stuck. */
+    if(matchList(norm, ORDER_UNSURE)){ return orderNumberUnknown(session); }
+    /* Talking about the order without giving a number is not a flow switch, so
+       re-prompt plainly instead of announcing a switch to the flow we are in. */
+    if(matchIntent(norm).intent === 'ORDER_TRACKING'){ return askForDigits(session); }
+    var awaitTurn = globalTurn(session, norm, COPY.switchAck);
+    if(awaitTurn){ return awaitTurn; }
+    return askForDigits(session);
+  }
+
+  /* ---- REC_Q1 ---- */
+  if(session.state === 'REC_Q1'){
+    if(matchOption(norm, REC_ACTIVITIES)){
+      var step1 = recAdvance(session, norm, false);
+      session.state = step1.state;
+      session.stuckCount = 0;
+      return reply([bot(step1.text)], step1.quick);
+    }
+    /* an activity we do not carry gear for is answered honestly, not forced */
+    if(matchList(norm, REC_OUT_OF_SCOPE)){ return reply([bot(COPY.recOutOfScope)], QUICK.recQ1); }
+    /* "not sure" is an answer, not a miss, and does not count against the streak */
+    if(matchList(norm, REC_UNSURE)){ return reply([bot(COPY.recUnsureQ1)], QUICK.recQ1); }
+    /* the global matcher runs before the cancel check, so "wrong size" here is
+       still a returns question rather than a way out of the flow */
+    var q1Turn = globalTurn(session, norm, COPY.switchAck);
+    if(q1Turn){ return q1Turn; }
+    if(matchShortList(norm, DENY) || matchShortList(norm, REC_CANCEL)){ return cancelRec(session); }
+    return slotReprompt(session, COPY.recReprompt, QUICK.recQ1);
+  }
+
+  /* ---- REC_Q2 ---- */
+  if(session.state === 'REC_Q2'){
+    if(matchOption(norm, REC_CONDITIONS)){
+      var step2 = recAdvance(session, norm, false);
+      session.state = step2.state;
+      session.stuckCount = 0;
+      return reply([bot(step2.text)], step2.quick);
+    }
+    if(matchList(norm, REC_UNSURE)){ return reply([bot(COPY.recUnsureQ2)], QUICK.recQ2); }
+    var q2Turn = globalTurn(session, norm, COPY.switchAck);
+    if(q2Turn){ return q2Turn; }
+    if(matchShortList(norm, DENY) || matchShortList(norm, REC_CANCEL)){ return cancelRec(session); }
+    return slotReprompt(session, COPY.recReprompt, QUICK.recQ2);
+  }
+
+  /* ---- answering the bot's own closing question ---- */
+  if(session.state === 'MENU' && session.awaitingAnythingElse){
+    var closing = matchShortList(norm, CLOSING_DENY) ? 'deny'
+                : (matchShortList(norm, CLOSING_AFFIRM) ? 'affirm' : null);
+    if(closing){
+      var alongside = matchIntent(norm);
+      /* "no thanks" is still a no. "no, where is my order" is an order question. */
+      if(!alongside.intent || alongside.intent === 'COURTESY'){
+        session.stuckCount = 0;
+        return reply([bot(closing === 'deny' ? COPY.closingDone : COPY.closingMore)], QUICK.menu);
+      }
+    }
+  }
+
+  /* ---- MENU, and the fall through from ORDER_333_FOLLOWUP ---- */
+  var prefix = isSlotFilling(session.state) ? COPY.switchAck : null;
+  var menuTurn = globalTurn(session, norm, prefix);
+  if(menuTurn){ return menuTurn; }
+
+  /* A bare number at the menu routes straight into order tracking. */
+  if(isBareOrderNumber(norm)){
+    session.stuckCount = 0;
+    return resolveOrder(session, extractOrderNumber(norm), null);
+  }
+
+  return fallback(session);
+}
+
+function handle(session, raw){
+  /* Empty or whitespace only input is never sent. */
+  if(!raw || !String(raw).replace(/\s/g, '')){ return null; }
+
+  currentClauseBreaks = clauseBreaks(raw);
+  var norm = normalize(raw);
+  var result = norm ? route(session, norm) : fallback(session);
+
+  /* Remember whether the bot just asked "Anything else?", so a bare yes or no
+     on the next turn is read as an answer instead of an unrecognized input. */
+  session.awaitingAnythingElse = endsWithAnythingElse(result);
+  return result;
+}
+
+/* ============================================================
+   5. RENDER
+   ============================================================ */
+
+var TYPING_MS = 600;
+var STEP_MS = 140;
+var DIVIDER_MS = 320;
+
+var elTranscript, elQuick, elInput, elSend, elComposer, elHdr, elTitle, elStatusText, elPanel, elSummary, elCases, elToggle;
+var session = createSession();
+var busy = false;
+
+function esc(s){
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatBotText(text){
+  var safe = esc(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  return safe.split('\n\n').map(function(block){
+    return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+  }).join('');
+}
+
+function stamp(){
+  var d = new Date();
+  var h = d.getHours();
+  var m = d.getMinutes();
+  var suffix = h < 12 ? 'AM' : 'PM';
+  var hour = h % 12;
+  if(hour === 0){ hour = 12; }
+  return hour + ':' + (m < 10 ? '0' : '') + m + ' ' + suffix;
+}
+
+function scrollDown(){ elTranscript.scrollTop = elTranscript.scrollHeight; }
+
+function addMessage(role, text, fromAgent){
+  var row = document.createElement('div');
+  row.className = 'row ' + role;
+
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble' + (fromAgent ? ' from-agent' : '');
+  if(role === 'user'){
+    bubble.textContent = text;
+  } else {
+    bubble.innerHTML = formatBotText(text);
+  }
+
+  var time = document.createElement('div');
+  time.className = 'stamp';
+  time.textContent = (role === 'user' ? 'You ' : (fromAgent ? 'Riley ' : 'Bot ')) + stamp();
+
+  row.appendChild(bubble);
+  row.appendChild(time);
+  elTranscript.appendChild(row);
+  scrollDown();
+}
+
+function addSystem(text){
+  var row = document.createElement('div');
+  row.className = 'sys' + (text === COPY.agentDivider ? ' hot' : '');
+  row.textContent = text;
+  elTranscript.appendChild(row);
+  scrollDown();
+}
+
+function showTyping(){
+  var row = document.createElement('div');
+  row.className = 'row bot';
+  row.id = 'typingRow';
+  row.setAttribute('aria-hidden', 'true');
+  var bubble = document.createElement('div');
+  bubble.className = 'bubble typing';
+  bubble.appendChild(document.createElement('span'));
+  bubble.appendChild(document.createElement('span'));
+  bubble.appendChild(document.createElement('span'));
+  row.appendChild(bubble);
+  elTranscript.appendChild(row);
+  scrollDown();
+}
+
+function hideTyping(){
+  var row = document.getElementById('typingRow');
+  if(row && row.parentNode){ row.parentNode.removeChild(row); }
+}
+
+function setAgentMode(on){
+  /* the whole surface signals the state, not just the header */
+  var app = document.querySelector('.app');
+  if(app){ app.classList.toggle('agent-mode', !!on); }
+  if(on){
+    elHdr.classList.add('agent');
+    elTitle.textContent = 'Riley · Live Agent';
+    elStatusText.textContent = 'connected';
+  } else {
+    elHdr.classList.remove('agent');
+    elTitle.textContent = 'North Star Support Bot';
+    elStatusText.textContent = 'Automated support';
+  }
+}
+
+function setQuick(labels){
+  elQuick.innerHTML = '';
+  elQuick.className = 'quick count-' + labels.length;
+  for(var i = 0; i < labels.length; i++){
+    (function(label){
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = label;
+      chip.setAttribute('aria-label', label);
+      chip.addEventListener('click', function(){
+        if(busy){ return; }
+        elQuick.innerHTML = '';   /* chips disappear once used */
+        send(label);
+      });
+      elQuick.appendChild(chip);
+    }(labels[i]));
+  }
+}
+
+function setBusy(state){
+  busy = state;
+  elSend.disabled = state;
+}
+
+function playTurns(result){
+  setBusy(true);
+  setQuick([]);
+  var index = 0;
+
+  function step(){
+    if(index >= result.turns.length){
+      setBusy(false);
+      setQuick(result.quick);
+      scrollDown();   /* chips shrink the transcript, so scroll again after they mount */
+      elInput.focus();
+      return;
+    }
+    var turn = result.turns[index++];
+
+    if(turn.role === 'system'){
+      if(turn.text === COPY.agentDivider){ setAgentMode(true); }
+      if(turn.text === COPY.agentExitDivider){ setAgentMode(false); }
+      addSystem(turn.text);
+      window.setTimeout(step, DIVIDER_MS);
+      return;
+    }
+
+    showTyping();
+    window.setTimeout(function(){
+      hideTyping();
+      addMessage('bot', turn.text, turn.fromAgent);
+      window.setTimeout(step, STEP_MS);
+    }, TYPING_MS);
+  }
+
+  step();
+}
+
+function send(raw){
+  if(busy){ return; }
+  var text = String(raw).replace(/^\s+|\s+$/g, '');
+  if(!text){ elInput.focus(); return; }   /* empty input is ignored silently */
+
+  addMessage('user', text, false);
+  elInput.value = '';
+
+  var result = handle(session, text);
+  if(!result){ elInput.focus(); return; }
+  playTurns(result);
+}
+
+/* ============================================================
+   6. SELFTEST
+   Every case below runs through handle(), the same function the
+   chat window uses. Nothing here is stubbed or hardcoded.
+   ============================================================ */
+
+function drive(messages){
+  var s = createSession();
+  var last = null;
+  for(var i = 0; i < messages.length; i++){ last = handle(s, messages[i]); }
+  return { session: s, result: last, text: turnsText(last) };
+}
+
+/* Same as drive, but keeps every reply, so repetition can be checked. */
+function driveCollect(messages){
+  var s = createSession();
+  var texts = [];
+  for(var i = 0; i < messages.length; i++){ texts.push(turnsText(handle(s, messages[i]))); }
+  return { session: s, texts: texts };
+}
+
+function turnsText(result){
+  if(!result){ return ''; }
+  var parts = [];
+  for(var i = 0; i < result.turns.length; i++){
+    var t = result.turns[i];
+    parts.push(t.role === 'system' ? '[' + t.text + ']' : t.text);
+  }
+  return parts.join('\n');
+}
+
+function has(text, needle){
+  return text.toLowerCase().indexOf(String(needle).toLowerCase()) !== -1;
+}
+
+function hasAll(text, needles){
+  for(var i = 0; i < needles.length; i++){
+    if(!has(text, needles[i])){ return false; }
+  }
+  return true;
+}
+
+function oneLine(text){
+  return text.replace(/\n+/g, ' / ');
+}
+
+var RETURN_FACTS = ['30 days', 'unused', 'original packaging', 'northstaroutfitters.com/returns'];
+
+var TEST_CASES = [
+  { input:'where is my order', from:'MENU', expect:'state AWAIT_ORDER, bot asks for the order number',
+    run:function(){ var d = drive(['where is my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'track my package', from:'MENU', expect:'state AWAIT_ORDER',
+    run:function(){ var d = drive(['track my package']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'wheres my stuff', from:'MENU', expect:'state AWAIT_ORDER',
+    run:function(){ var d = drive(['wheres my stuff']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'111', from:'AWAIT_ORDER', expect:'shipped response, back to MENU',
+    run:function(){ var d = drive(['where is my order', '111']);
+      return { ok: has(d.text, "Order #111 has shipped and it's arriving tomorrow.") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'#111', from:'AWAIT_ORDER', expect:'shipped response',
+    run:function(){ var d = drive(['where is my order', '#111']);
+      return { ok: has(d.text, "Order #111 has shipped and it's arriving tomorrow."), got: d }; } },
+
+  { input:'order 222', from:'AWAIT_ORDER', expect:'processing response',
+    run:function(){ var d = drive(['where is my order', 'order 222']);
+      return { ok: has(d.text, 'Order #222 is processing and ships within 24 hours.'), got: d }; } },
+
+  { input:'my order number is 333', from:'AWAIT_ORDER', expect:'delivered plus follow up, state ORDER_333_FOLLOWUP',
+    run:function(){ var d = drive(['where is my order', 'my order number is 333']);
+      return { ok: has(d.text, 'Order #333 was delivered. Did everything arrive in good shape?') && d.session.state === 'ORDER_333_FOLLOWUP', got: d }; } },
+
+  { input:'999', from:'AWAIT_ORDER', expect:'invalid order response',
+    run:function(){ var d = drive(['where is my order', '999']);
+      return { ok: has(d.text, "I couldn't find an order with that number."), got: d }; } },
+
+  /* Threshold is three attempts, not two: the live agent chip is on every one of
+     these messages, so the user can escalate themselves instead of being pushed. */
+  { input:'999 three times', from:'AWAIT_ORDER', expect:'third miss escalates to LIVE_AGENT',
+    run:function(){ var d = drive(['where is my order', '999', '999', '999']);
+      return { ok: has(d.text, 'I want to make sure you get sorted out.') && d.session.state === 'LIVE_AGENT' && has(d.text, 'Riley'), got: d }; } },
+
+  { input:'111', from:'MENU (bare number, no context)', expect:'routes into order tracking, shipped response',
+    run:function(){ var d = drive(['111']);
+      return { ok: has(d.text, "Order #111 has shipped and it's arriving tomorrow.") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'what is your return policy', from:'MENU', expect:'30 days, unused, original packaging, returns link',
+    run:function(){ var d = drive(['what is your return policy']);
+      return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
+
+  { input:'i want to return this', from:'MENU', expect:'returns response',
+    run:function(){ var d = drive(['i want to return this']);
+      return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
+
+  { input:'wrong size', from:'MENU', expect:'returns response',
+    run:function(){ var d = drive(['wrong size']);
+      return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
+
+  { input:'what should i buy', from:'MENU', expect:'state REC_Q1',
+    run:function(){ var d = drive(['what should i buy']);
+      return { ok: d.session.state === 'REC_Q1' && has(d.text, 'What are you heading out for?'), got: d }; } },
+
+  { input:'Camping', from:'REC_Q1', expect:'state REC_Q2',
+    run:function(){ var d = drive(['what should i buy', 'Camping']);
+      return { ok: d.session.state === 'REC_Q2' && has(d.text, 'What conditions are you expecting?'), got: d }; } },
+
+  { input:'Cold and snowy', from:'REC_Q2', expect:'four-season tents recommendation',
+    run:function(){ var d = drive(['what should i buy', 'Camping', 'Cold and snowy']);
+      return { ok: has(d.text, 'four-season tents and cold-rated sleeping bags') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'how long does shipping take', from:'MENU', expect:'3 to 5 and 1 to 2 business days',
+    run:function(){ var d = drive(['how long does shipping take']);
+      return { ok: hasAll(d.text, ['3 to 5 business days', '1 to 2 business days']), got: d }; } },
+
+  { input:'talk to a human', from:'MENU', expect:'state LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'Connecting you with a live agent now.') && has(d.text, 'Riley'), got: d }; } },
+
+  { input:'agent', from:'REC_Q2 (mid flow)', expect:'state LIVE_AGENT',
+    run:function(){ var d = drive(['what should i buy', 'Camping', 'agent']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, "Sure, let's switch gears."), got: d }; } },
+
+  { input:'actually what is your return policy', from:'AWAIT_ORDER (mid slot fill)', expect:'returns response, not an invalid order error',
+    run:function(){ var d = drive(['where is my order', 'actually what is your return policy']);
+      return { ok: hasAll(d.text, RETURN_FACTS) && !has(d.text, "couldn't find an order") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'menu', from:'LIVE_AGENT', expect:'state MENU',
+    run:function(){ var d = drive(['talk to a human', 'menu']);
+      return { ok: d.session.state === 'MENU' && has(d.text, "You're back with the North Star Support Bot."), got: d }; } },
+
+  { input:'asdkjhasd', from:'MENU', expect:'first fallback, stuckCount 1',
+    run:function(){ var d = drive(['asdkjhasd']);
+      return { ok: has(d.text, "Sorry, I didn't understand that.") && d.session.stuckCount === 1, got: d }; } },
+
+  { input:'asdkjhasd three times', from:'MENU', expect:'third miss escalates to LIVE_AGENT',
+    run:function(){ var d = drive(['asdkjhasd', 'asdkjhasd', 'asdkjhasd']);
+      return { ok: has(d.text, 'I want to make sure you get sorted out.') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'hello after a completed flow and one miss', from:'MENU', expect:'greeting, stuckCount back to 0',
+    run:function(){ var d = drive(['what is your return policy', 'asdkjhasd', 'hello']);
+      return { ok: has(d.text, 'Hey. What can I help you with?') && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'track order 111', from:'MENU', expect:'shipped response directly, AWAIT_ORDER never entered',
+    run:function(){ var d = drive(['track order 111']);
+      return { ok: has(d.text, "Order #111 has shipped and it's arriving tomorrow.") && !has(d.text, 'order number') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is order 222', from:'MENU', expect:'processing response directly',
+    run:function(){ var d = drive(['where is order 222']);
+      return { ok: has(d.text, 'Order #222 is processing and ships within 24 hours.') && !has(d.text, 'order number') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'555', from:'MENU (bare invalid number)', expect:'invalid order response',
+    run:function(){ var d = drive(['555']);
+      return { ok: has(d.text, "I couldn't find an order with that number.") && d.session.stuckCount === 1, got: d }; } },
+
+  { input:'exchange', from:'MENU', expect:'returns and exchanges response',
+    run:function(){ var d = drive(['exchange']);
+      return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
+
+  /* ---- defect fixes ---- */
+
+  { input:'Winter sports', from:'MENU', expect:'skips ahead to REC_Q2 with recActivity set to winter sports',
+    run:function(){ var d = drive(['Winter sports']);
+      return { ok: d.session.state === 'REC_Q2' && d.session.recActivity === 'winter' && has(d.text, 'What conditions are you expecting?'), got: d }; } },
+
+  { input:'Camping', from:'MENU', expect:'state REC_Q2, recActivity camping',
+    run:function(){ var d = drive(['Camping']);
+      return { ok: d.session.state === 'REC_Q2' && d.session.recActivity === 'camping', got: d }; } },
+
+  { input:'cold and snowy', from:'MENU', expect:'recommendation flow with recCondition pre-filled',
+    run:function(){ var d = drive(['cold and snowy']);
+      return { ok: d.session.state === 'REC_Q1' && d.session.recCondition === 'cold' && has(d.text, 'What are you heading out for?'), got: d }; } },
+
+  { input:'I need a jacket', from:'MENU', expect:'state REC_Q1, no slot pre-filled',
+    run:function(){ var d = drive(['I need a jacket']);
+      return { ok: d.session.state === 'REC_Q1' && !d.session.recActivity && !d.session.recCondition, got: d }; } },
+
+  { input:'no', from:'AWAIT_ORDER', expect:'re-prompt for the number, counted as one miss, no escalation',
+    run:function(){ var d = drive(['where is my order', 'no']);
+      return { ok: has(d.text, "I'll need your order number to look that up.") && d.session.stuckCount === 1 && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'my item was crushed', from:'MENU', expect:'returns and exchanges response',
+    run:function(){ var d = drive(['my item was crushed']);
+      return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
+
+  { input:'my item was crushed', from:'AWAIT_ORDER', expect:'returns response as a global interrupt, invalidOrderStreak unchanged',
+    run:function(){ var d = drive(['where is my order', 'my item was crushed']);
+      return { ok: hasAll(d.text, RETURN_FACTS) && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'no three times', from:'AWAIT_ORDER', expect:'non-numeric misses now count, so the third escalates',
+    run:function(){ var d = drive(['where is my order', 'no', 'no', 'no']);
+      return { ok: has(d.text, 'I want to make sure you get sorted out.') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'999 then 888 then 777', from:'AWAIT_ORDER', expect:'third failed lookup escalates to LIVE_AGENT',
+    run:function(){ var d = drive(['where is my order', '999', '888', '777']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'what is your return policy', from:'LIVE_AGENT', expect:'Riley answers with the exact returns copy, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', 'what is your return policy']);
+      return { ok: has(d.text, COPY.returns) && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'111', from:'LIVE_AGENT', expect:'Riley answers with the exact shipped copy, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', '111']);
+      return { ok: has(d.text, COPY.order111) && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'menu', from:'MENU', expect:'dedicated menu reset copy, not the greeting line',
+    run:function(){ var d = drive(['menu']);
+      return { ok: has(d.text, 'Back to the main menu.') && !has(d.text, 'Hey. What can I help you with?'), got: d }; } },
+
+  { input:'111 then no', from:'MENU', expect:'shipped response, then the closing line, not a fallback',
+    run:function(){ var d = drive(['111', 'no']);
+      return { ok: has(d.text, 'Happy to help. Have a good one out there.') && !has(d.text, "didn't understand") && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'111 then yes', from:'MENU', expect:'What can I help you with? with menu chips',
+    run:function(){ var d = drive(['111', 'yes']);
+      return { ok: d.text === 'What can I help you with?' && d.result.quick.length === 4, got: d }; } },
+
+  { input:'thanks', from:'MENU', expect:'courtesy response, stuckCount stays 0',
+    run:function(){ var d = drive(['thanks']);
+      return { ok: has(d.text, 'Anytime. Anything else I can help with?') && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'bye', from:'MENU', expect:'closing line, stuckCount stays 0',
+    run:function(){ var d = drive(['bye']);
+      return { ok: has(d.text, 'Happy to help. Have a good one out there.') && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'asdkjhasd then thanks then asdkjhasd', from:'MENU', expect:'courtesy resets the streak, so the second miss does not escalate',
+    run:function(){ var d = drive(['asdkjhasd', 'thanks', 'asdkjhasd']);
+      return { ok: has(d.text, "Sorry, I didn't understand that.") && d.session.stuckCount === 1 && d.session.state === 'MENU', got: d }; } },
+
+  { input:'333 then no', from:'ORDER_333_FOLLOWUP', expect:'delivery problem response, NOT the closing line',
+    run:function(){ var d = drive(['333', 'no']);
+      return { ok: has(d.text, 'Sorry about that. Our return window is 30 days from delivery') && !has(d.text, 'Have a good one out there'), got: d }; } },
+
+  { input:'help', from:'MENU', expect:'menu reset copy',
+    run:function(){ var d = drive(['help']);
+      return { ok: has(d.text, 'Back to the main menu.'), got: d }; } },
+
+  { input:'#111', from:'MENU', expect:'shipped response',
+    run:function(){ var d = drive(['#111']);
+      return { ok: has(d.text, "Order #111 has shipped and it's arriving tomorrow."), got: d }; } },
+
+  { input:'its already been so many days and still havent received it', from:'MENU', expect:'state AWAIT_ORDER, not a fallback',
+    run:function(){ var d = drive(['its already been so many days and still havent received it']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && !has(d.text, "didn't understand"), got: d }; } },
+
+  { input:'i havent received my order', from:'MENU', expect:'state AWAIT_ORDER',
+    run:function(){ var d = drive(['i havent received my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'my order is late', from:'MENU', expect:'state AWAIT_ORDER',
+    run:function(){ var d = drive(['my order is late']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  /* This case originally asserted the state stayed LIVE_AGENT. Riley now hands
+     multi-turn flows back to the bot instead of faking them, so the correct end
+     state is AWAIT_ORDER. The point of the case is unchanged: the user gets
+     order tracking help rather than the generic acknowledgment. */
+  { input:'my order is not coming', from:'LIVE_AGENT', expect:'Riley gives order tracking help via handback, not the generic acknowledgment',
+    run:function(){ var d = drive(['talk to a human', 'my order is not coming']);
+      return { ok: has(d.text, "What's your order number?") && !has(d.text, 'case notes') && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'three unrecognized messages', from:'LIVE_AGENT', expect:'three different acknowledgments, no two consecutive repeats',
+    run:function(){
+      var c = driveCollect(['talk to a human', 'qqqq', 'wwww', 'eeee']);
+      var acks = c.texts.slice(1);
+      var distinct = acks[0] !== acks[1] && acks[1] !== acks[2] && acks[0] !== acks[2];
+      return { ok: distinct, got: { session: c.session, text: acks.join(' >> ') } }; } },
+
+  { input:'are you a bot', from:'LIVE_AGENT', expect:'honest simulated agent disclosure',
+    run:function(){ var d = drive(['talk to a human', 'are you a bot']);
+      return { ok: has(d.text, 'simulated live agent state for this demo') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  /* Both phrasings are checked. The second ends in the navigation word `back`,
+     which previously bounced the user out of the handoff. */
+  { input:'when will they reach out (also: when will i hear back)', from:'LIVE_AGENT', expect:'timing response with no invented time commitment, stays in LIVE_AGENT',
+    run:function(){
+      var d = drive(['talk to a human', 'when will they reach out']);
+      var d2 = drive(['talk to a human', 'when will i hear back']);
+      var invented = /\d+\s*(hour|day|minute|week|business)/i.test(d.text);
+      var ok = has(d.text, "I don't have a specific time to give you on that") && !invented &&
+               has(d2.text, "I don't have a specific time to give you on that") && d2.session.state === 'LIVE_AGENT';
+      return { ok: ok, got: d }; } },
+
+  { input:'thanks', from:'LIVE_AGENT', expect:'courtesy response, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', 'thanks']);
+      return { ok: has(d.text, 'Anytime. Anything else I can help with?') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  /* ---- slot state fallback and agent closing ---- */
+
+  { input:'no', from:'REC_Q2', expect:'cancel response, state MENU, not a generic fallback',
+    run:function(){ var d = drive(['what should i buy', 'camping', 'no']);
+      return { ok: has(d.text, 'No problem. What else can I help you with?') && d.session.state === 'MENU' && !has(d.text, 'order tracking, returns and exchanges'), got: d }; } },
+
+  { input:'asdkjhasd', from:'REC_Q2', expect:'REC_Q2 reprompt with the four condition chips, state stays REC_Q2',
+    run:function(){ var d = drive(['what should i buy', 'camping', 'asdkjhasd']);
+      return { ok: has(d.text, 'Sorry, I didn\'t understand that. Which of these is closest?') && d.session.state === 'REC_Q2' && d.result.quick.length === 4 && d.result.quick[0] === 'Warm and dry', got: d }; } },
+
+  { input:'asdkjhasd three times', from:'REC_Q2', expect:'third miss in the slot escalates to LIVE_AGENT',
+    run:function(){ var d = drive(['what should i buy', 'camping', 'asdkjhasd', 'asdkjhasd', 'asdkjhasd']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'asdkjhasd', from:'REC_Q1', expect:'REC_Q1 reprompt with the four activity chips, state stays REC_Q1',
+    run:function(){ var d = drive(['what should i buy', 'asdkjhasd']);
+      return { ok: has(d.text, 'Sorry, I didn\'t understand that. Which of these is closest?') && d.session.state === 'REC_Q1' && d.result.quick[0] === 'Hiking and backpacking', got: d }; } },
+
+  { input:'asdkjhasd', from:'ORDER_333_FOLLOWUP', expect:'follow-up reprompt, state unchanged',
+    run:function(){ var d = drive(['333', 'asdkjhasd']);
+      return { ok: has(d.text, 'Sorry, I didn\'t understand that. Did everything arrive in good shape?') && d.session.state === 'ORDER_333_FOLLOWUP' && d.result.quick[0] === 'Yes, all good', got: d }; } },
+
+  { input:'menu', from:'REC_Q2', expect:'global interrupt still wins over the slot reprompt',
+    run:function(){ var d = drive(['what should i buy', 'camping', 'menu']);
+      return { ok: has(d.text, 'Back to the main menu.') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'what is your return policy then no', from:'LIVE_AGENT', expect:'agent closing line, state stays LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', 'what is your return policy', 'no']);
+      return { ok: has(d.text, 'Happy to help. Your conversation stays logged, and you can head back to the main menu any time.') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'999', from:'LIVE_AGENT', expect:'not-finding-that-order response, not the rotating acknowledgment',
+    run:function(){ var d = drive(['talk to a human', '999']);
+      return { ok: has(d.text, "I'm not finding an order with that number on my end.") && !has(d.text, 'case notes') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  /* ---- Riley never starts a flow he cannot finish ---- */
+
+  { input:'help me find gear', from:'LIVE_AGENT', expect:'handback line, divider, then the REC_Q1 opening, end state REC_Q1',
+    run:function(){ var d = drive(['talk to a human', 'help me find gear']);
+      return { ok: has(d.text, 'Let me hand you back to the support bot') && has(d.text, '[Back with the support bot]') &&
+                   has(d.text, 'What are you heading out for?') && d.session.state === 'REC_Q1', got: d }; } },
+
+  { input:'help me find gear then Camping', from:'LIVE_AGENT', expect:'the handed back flow actually runs, REC_Q2',
+    run:function(){ var d = drive(['talk to a human', 'help me find gear', 'Camping']);
+      return { ok: d.session.state === 'REC_Q2' && has(d.text, 'What conditions are you expecting?'), got: d }; } },
+
+  { input:'i want to track my order', from:'LIVE_AGENT', expect:'handback line, then the order prompt, end state AWAIT_ORDER',
+    run:function(){ var d = drive(['talk to a human', 'i want to track my order']);
+      return { ok: has(d.text, 'Let me hand you back to the support bot') && has(d.text, "What's your order number?") && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'track order 111', from:'LIVE_AGENT', expect:'Riley answers directly, no handback, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', 'track order 111']);
+      return { ok: has(d.text, COPY.order111) && !has(d.text, 'hand you back') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'111', from:'LIVE_AGENT', expect:'Riley answers directly, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', '111']);
+      return { ok: has(d.text, COPY.order111) && !has(d.text, 'hand you back') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'i want to speak to human', from:'LIVE_AGENT', expect:'already-connected response',
+    run:function(){ var d = drive(['talk to a human', 'i want to speak to human']);
+      return { ok: has(d.text, "You're already connected with me, Riley.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'a long message containing the word thanks', from:'LIVE_AGENT', expect:'NOT the courtesy response',
+    run:function(){ var d = drive(['talk to a human', 'what do you mean thanks, you ask question and when I ask you back you tell thanks']);
+      return { ok: !has(d.text, 'Anytime. Anything else I can help with?') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'thanks', from:'MENU', expect:'short courtesy still works',
+    run:function(){ var d = drive(['thanks']);
+      return { ok: has(d.text, 'Anytime. Anything else I can help with?'), got: d }; } },
+
+  { input:'what all products you guys have', from:'MENU', expect:'catalog line plus the REC_Q1 question, end state REC_Q1',
+    run:function(){ var d = drive(['what all products you guys have']);
+      return { ok: has(d.text, 'We carry outdoor apparel and camping gear.') && has(d.text, 'What are you heading out for?') && d.session.state === 'REC_Q1', got: d }; } },
+
+  { input:'what is your name', from:'MENU', expect:'bot identity response',
+    run:function(){ var d = drive(['what is your name']);
+      return { ok: has(d.text, "I'm the North Star Support Bot.") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'what is your name', from:'LIVE_AGENT', expect:'Riley identity response',
+    run:function(){ var d = drive(['talk to a human', 'what is your name']);
+      return { ok: has(d.text, "I'm Riley, part of the North Star support team.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'are you a bot', from:'LIVE_AGENT', expect:'AGENT_META disclosure still wins over IDENTITY',
+    run:function(){ var d = drive(['talk to a human', 'are you a bot']);
+      return { ok: has(d.text, 'simulated live agent state for this demo') && !has(d.text, 'part of the North Star support team'), got: d }; } },
+
+  { input:'can you send your website', from:'MENU', expect:'contact response offering only the returns link',
+    run:function(){ var d = drive(['can you send your website']);
+      var onlyReturnsLink = (d.text.match(/northstaroutfitters\.com\/\w+/g) || []).every(function(u){ return u === 'northstaroutfitters.com/returns'; });
+      return { ok: has(d.text, "I don't have a general site link to share here.") && onlyReturnsLink, got: d }; } },
+
+  { input:'how much does a tent cost', from:'MENU', expect:'declines on price, offers a live agent, invents nothing',
+    run:function(){ var d = drive(['how much does a tent cost']);
+      var invented = /\$|\d+\.\d\d/.test(d.text);
+      return { ok: has(d.text, "I don't have pricing, stock or carrier details here.") && has(d.text, 'live agent') && !invented && d.session.state === 'MENU', got: d }; } },
+
+  { input:'which carrier do you use', from:'LIVE_AGENT', expect:'declines on carrier, no carrier named',
+    run:function(){ var d = drive(['talk to a human', 'which carrier do you use']);
+      var named = /\b(ups|fedex|usps|dhl)\b/i.test(d.text);
+      return { ok: has(d.text, "I don't have pricing, stock or carrier details here.") && !named && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'three recommendations in a row', from:'MENU', expect:'three different result templates, no consecutive repeat',
+    run:function(){
+      var s = createSession();
+      var outs = [];
+      for(var i = 0; i < 3; i++){
+        handle(s, 'help me find gear');
+        handle(s, 'Camping');
+        outs.push(turnsText(handle(s, 'Cold and snowy')));
+      }
+      /* same gear every time, so any difference is the template itself */
+      var sameFacts = outs.every(function(t){ return has(t, 'four-season tents and cold-rated sleeping bags'); });
+      var distinct = outs[0] !== outs[1] && outs[1] !== outs[2] && outs[0] !== outs[2];
+      return { ok: sameFacts && distinct, got: { session: s, text: outs.map(function(t){ return t.split('\n')[0]; }).join(' >> ') } }; } },
+
+  /* ---- robustness pass: negation, escape hatches, frustration ---- */
+
+  { input:'dont connect me with live agent', from:'MENU', expect:'stays with the bot, does not escalate',
+    run:function(){ var d = drive(['dont connect me with live agent']);
+      return { ok: has(d.text, "I'll keep you here with the support bot") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'do not transfer me to an agent', from:'MENU', expect:'stays with the bot',
+    run:function(){ var d = drive(['do not transfer me to an agent']);
+      return { ok: d.session.state === 'MENU' && !has(d.text, 'Connecting you with a live agent'), got: d }; } },
+
+  { input:'order tracking, no return policy', from:'MENU', expect:'order flow, not returns',
+    run:function(){ var d = drive(['order tracking, no return policy']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && !has(d.text, '30 days to return'), got: d }; } },
+
+  { input:'return policy, no order tracking', from:'MENU', expect:'returns, not the order flow',
+    run:function(){ var d = drive(['return policy, no order tracking']);
+      return { ok: has(d.text, '30 days to return an item') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'no', from:'MENU after an anything-else question', expect:'still the closing line, not the negation response',
+    run:function(){ var d = drive(['111', 'no']);
+      return { ok: has(d.text, 'Have a good one out there') && !has(d.text, 'What would you like to do instead'), got: d }; } },
+
+  { input:'transfer back to the bot', from:'LIVE_AGENT', expect:'exits to MENU',
+    run:function(){ var d = drive(['talk to a human', 'transfer back to the bot']);
+      return { ok: d.session.state === 'MENU' && has(d.text, '[Back with the support bot]'), got: d }; } },
+
+  { input:'back to support bot', from:'LIVE_AGENT', expect:'exits to MENU',
+    run:function(){ var d = drive(['talk to a human', 'back to support bot']);
+      return { ok: d.session.state === 'MENU' && has(d.text, '[Back with the support bot]'), got: d }; } },
+
+  { input:'no you are a live agent, transfer back to the normal chatbot', from:'LIVE_AGENT', expect:'exits to MENU',
+    run:function(){ var d = drive(['talk to a human', 'no you are a live agent, transfer back to the normal chatbot']);
+      return { ok: d.session.state === 'MENU' && has(d.text, '[Back with the support bot]'), got: d }; } },
+
+  { input:'i want to speak to human', from:'LIVE_AGENT', expect:'still the already-connected response',
+    run:function(){ var d = drive(['talk to a human', 'i want to speak to human']);
+      return { ok: has(d.text, "already connected with me, Riley") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  /* The bot must never recite which order numbers exist. */
+  { input:'123', from:'AWAIT_ORDER', expect:'no order number named anywhere in the response',
+    run:function(){ var d = drive(['where is my order', '123']);
+      var leaks = /\b111\b|\b222\b|\b333\b/.test(d.text);
+      return { ok: has(d.text, "I couldn't find an order with that number.") && !leaks &&
+                   d.result.quick.join('|') === 'Try again|Talk to a live agent|Back to main menu', got: d }; } },
+
+  { input:'123 repeatedly across two order flows', from:'AWAIT_ORDER', expect:'escalates at most once, then repeats the message',
+    run:function(){
+      var d = drive(['where is my order', '123', '123', '123', 'menu',
+                     'where is my order', '123', '123', '123', '123']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "I couldn't find an order with that number.") &&
+                   d.session.escalationUsed === true, got: d }; } },
+
+  { input:'what can you help me with', from:'LIVE_AGENT', expect:'capability answer, not an acknowledgment',
+    run:function(){ var d = drive(['talk to a human', 'what can you help me with']);
+      return { ok: has(d.text, 'I can look up an order, go over returns and exchanges') && !has(d.text, 'case notes'), got: d }; } },
+
+  { input:'what can you do', from:'MENU', expect:'capability answer',
+    run:function(){ var d = drive(['what can you do']);
+      return { ok: has(d.text, 'I can track an order, help with returns and exchanges'), got: d }; } },
+
+  { input:'hi four times', from:'LIVE_AGENT', expect:'greeting every time, never a case note',
+    run:function(){
+      var c = driveCollect(['talk to a human', 'hi', 'hi', 'hi', 'hi']);
+      var greets = c.texts.slice(1);
+      return { ok: greets.every(function(t){ return t === 'Hi again. What can I help with?'; }), got: { session: c.session, text: greets.join(' | ') } }; } },
+
+  { input:'i want to buy gears', from:'MENU', expect:'recommendation flow, plural matched',
+    run:function(){ var d = drive(['i want to buy gears']);
+      return { ok: d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2', got: d }; } },
+
+  { input:'looking for jackets', from:'MENU', expect:'recommendation flow, plural matched',
+    run:function(){ var d = drive(['looking for jackets']);
+      return { ok: d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2', got: d }; } },
+
+  { input:'wheres my orders', from:'MENU', expect:'order flow, plural matched',
+    run:function(){ var d = drive(['wheres my orders']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'you idiot', from:'MENU', expect:'apology plus escalation',
+    run:function(){ var d = drive(['you idiot']);
+      return { ok: has(d.text, "Sorry, I'm not making this easy.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'bro this chatbot is so annoying', from:'MENU', expect:'apology plus escalation',
+    run:function(){ var d = drive(['bro this chatbot is so annoying']);
+      return { ok: has(d.text, "Sorry, I'm not making this easy.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'are you slow or what', from:'REC_Q1', expect:'apology plus escalation',
+    run:function(){ var d = drive(['help me find gear', 'are you slow or what']);
+      return { ok: has(d.text, "Sorry, I'm not making this easy.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'you idiot', from:'LIVE_AGENT', expect:'actionable redirect, no escalation loop',
+    run:function(){ var d = drive(['talk to a human', 'you idiot']);
+      return { ok: d.session.state === 'LIVE_AGENT' && !has(d.text, 'case notes') && has(d.text, 'I can'), got: d }; } },
+
+  { input:'what are the services or products you guys have', from:'MENU', expect:'catalog line plus REC_Q1',
+    run:function(){ var d = drive(['what are the services or products you guys have']);
+      return { ok: has(d.text, 'We carry outdoor apparel and camping gear.') && d.session.state === 'REC_Q1', got: d }; } },
+
+  { input:'what are the services or products you guys have', from:'LIVE_AGENT', expect:'handback plus REC_Q1',
+    run:function(){ var d = drive(['talk to a human', 'what are the services or products you guys have']);
+      return { ok: has(d.text, 'hand you back') && has(d.text, 'What are you heading out for?') && d.session.state === 'REC_Q1', got: d }; } },
+
+  { input:'nevermind, i want to buy gears', from:'AWAIT_ORDER', expect:'recommendation flow',
+    run:function(){ var d = drive(['where is my order', 'nevermind, i want to buy gears']);
+      return { ok: d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2', got: d }; } },
+
+  { input:'nevermind', from:'REC_Q2', expect:'cancels to MENU',
+    run:function(){ var d = drive(['help me find gear', 'Camping', 'nevermind']);
+      return { ok: d.session.state === 'MENU' && has(d.text, 'Back to the main menu.'), got: d }; } },
+
+  { input:'three unmatched messages', from:'LIVE_AGENT', expect:'three different actionable redirects, none mentioning case notes',
+    run:function(){
+      var c = driveCollect(['talk to a human', 'zxcv', 'qwop', 'plmn']);
+      var outs = c.texts.slice(1);
+      var distinct = outs[0] !== outs[1] && outs[1] !== outs[2] && outs[0] !== outs[2];
+      var noNotes = outs.every(function(t){ return !has(t, 'case notes') && !has(t, 'noted') && !has(t, 'logged along'); });
+      var actionable = outs.every(function(t){ return has(t, 'I can') || has(t, 'What I can do'); });
+      return { ok: distinct && noNotes && actionable, got: { session: c.session, text: outs.map(function(t){ return t.slice(0, 40); }).join(' >> ') } }; } },
+
+  /* ---- found by the adversarial self-audit ---- */
+
+  { input:'dont give me the return policy again', from:'MENU', expect:'does not deliver the thing that was refused',
+    run:function(){ var d = drive(['dont give me the return policy again']);
+      return { ok: !has(d.text, '30 days to return') && has(d.text, 'What would you like to do instead'), got: d }; } },
+
+  { input:'dont tell me about shipping just find my package', from:'MENU', expect:'negation stops at the pivot, order request survives',
+    run:function(){ var d = drive(['dont tell me about shipping just find my package']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && !has(d.text, '3 to 5 business days'), got: d }; } },
+
+  { input:'no bot i want human', from:'MENU', expect:'negation applies to the bot, not to the request for a human',
+    run:function(){ var d = drive(['no bot i want human']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'can you cancel my order', from:'MENU', expect:'says it cannot change an order, does not ask for a number',
+    run:function(){ var d = drive(['can you cancel my order']);
+      return { ok: has(d.text, "I can't change an order from here.") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'why do you need my order number', from:'AWAIT_ORDER', expect:'plain re-prompt, no incoherent switch announcement',
+    run:function(){ var d = drive(['where is my order', 'why do you need my order number']);
+      return { ok: has(d.text, "I'll need your order number to look that up.") && !has(d.text, "switch gears") && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  /* ---- final revision: frustration is a last resort, typos, named agent ---- */
+
+  { input:'i said give your exchange policy idiot', from:'MENU', expect:'answers the question, no escalation, no comment on tone',
+    run:function(){ var d = drive(['i said give your exchange policy idiot']);
+      return { ok: has(d.text, 'Exchanges use the same process') && d.session.state === 'MENU' &&
+                   !has(d.text, 'not making this easy'), got: d }; } },
+
+  { input:'what the hell, i want your exchange policy', from:'LIVE_AGENT', expect:'the policy, not a redirect',
+    run:function(){ var d = drive(['talk to a human', 'what the hell, i want your exchange policy']);
+      return { ok: has(d.text, '30 days to return an item') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'you idiot', from:'MENU', expect:'still escalates when there is no request in the message',
+    run:function(){ var d = drive(['you idiot']);
+      return { ok: has(d.text, "Sorry, I'm not making this easy.") && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'this is so annoying, where is my order', from:'MENU', expect:'order flow, no escalation',
+    run:function(){ var d = drive(['this is so annoying, where is my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && !has(d.text, 'not making this easy'), got: d }; } },
+
+  { input:'exchance policy', from:'MENU', expect:'returns and exchanges policy via typo tolerance',
+    run:function(){ var d = drive(['exchance policy']);
+      return { ok: has(d.text, 'Exchanges use the same process'), got: d }; } },
+
+  { input:'retrun poilcy', from:'MENU', expect:'returns and exchanges policy via typo tolerance',
+    run:function(){ var d = drive(['retrun poilcy']);
+      return { ok: has(d.text, '30 days to return an item'), got: d }; } },
+
+  { input:'wheres my ordr', from:'MENU', expect:'order flow via typo tolerance',
+    run:function(){ var d = drive(['wheres my ordr']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'trak my order', from:'MENU', expect:'order flow',
+    run:function(){ var d = drive(['trak my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'shippign times', from:'MENU', expect:'shipping response via typo tolerance',
+    run:function(){ var d = drive(['shippign times']);
+      return { ok: has(d.text, '3 to 5 business days'), got: d }; } },
+
+  { input:'i want to speak to riley', from:'MENU', expect:'connects to the live agent',
+    run:function(){ var d = drive(['i want to speak to riley']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'who all are there in your team', from:'LIVE_AGENT', expect:'actionable redirect, not already-connected',
+    run:function(){ var d = drive(['talk to a human', 'who all are there in your team']);
+      return { ok: !has(d.text, 'already connected') && has(d.text, 'I can') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'i want to speak to a human', from:'LIVE_AGENT', expect:'still already-connected',
+    run:function(){ var d = drive(['talk to a human', 'i want to speak to a human']);
+      return { ok: has(d.text, 'already connected with me, Riley'), got: d }; } },
+
+  { input:'nothing', from:'REC_Q1', expect:'cancels to menu',
+    run:function(){ var d = drive(['help me find gear', 'nothing']);
+      return { ok: d.session.state === 'MENU' && has(d.text, 'No problem.'), got: d }; } },
+
+  { input:'back', from:'MENU', expect:'menu copy with no switch-gears prefix',
+    run:function(){ var d = drive(['back']);
+      return { ok: has(d.text, 'Back to the main menu.') && !has(d.text, 'switch gears'), got: d }; } },
+
+  { input:'menu', from:'REC_Q2', expect:'menu copy WITH the switch-gears prefix, a genuine interrupt',
+    run:function(){ var d = drive(['help me find gear', 'Camping', 'menu']);
+      return { ok: has(d.text, "Sure, let's switch gears.") && has(d.text, 'Back to the main menu.'), got: d }; } },
+
+  { input:'Back to main menu chip mid slot fill', from:'AWAIT_ORDER', expect:'no switch-gears prefix on an offered chip',
+    run:function(){ var d = drive(['where is my order', 'Back to main menu']);
+      return { ok: !has(d.text, 'switch gears') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'i dont understand', from:'MENU', expect:'capability explanation, not a fallback',
+    run:function(){ var d = drive(['i dont understand']);
+      return { ok: has(d.text, 'I can track an order, help with returns and exchanges') && !has(d.text, "didn't understand that"), got: d }; } },
+
+  { input:'seven exchange phrasings', from:'MENU', expect:'all return the combined returns and exchanges response',
+    run:function(){
+      var phrasings = ['exchange policy', 'whats your exchange policy', 'explain exchanges', 'can i exchange',
+                       'i want to exchange something', 'exchange instead of return', 'do you do exchanges'];
+      var misses = [];
+      for(var i = 0; i < phrasings.length; i++){
+        var d = drive([phrasings[i]]);
+        if(!has(d.text, 'Exchanges use the same process')){ misses.push(phrasings[i]); }
+      }
+      return { ok: misses.length === 0, got: { session:{ state:'MENU' }, text: misses.length ? 'missed: ' + misses.join(', ') : 'all seven returned the policy' } }; } },
+
+  /* ---- found by the final hostile audit ---- */
+
+  { input:'terrible service, when will 111 arrive', from:'MENU', expect:'answers the order, does not escalate on the insult',
+    run:function(){ var d = drive(['terrible service, when will 111 arrive']);
+      return { ok: has(d.text, "Order #111 has shipped") && d.session.state === 'MENU', got: d }; } },
+
+  { input:'are you hiring', from:'MENU', expect:'no fuzzy correction to hiking, no gear flow',
+    run:function(){ var d = drive(['are you hiring']);
+      return { ok: d.session.state === 'MENU' && !has(d.text, 'heading out for'), got: d }; } },
+
+  { input:'sorry i didnt get that', from:'MENU', expect:'re-explains capability rather than reporting its own confusion',
+    run:function(){ var d = drive(['sorry i didnt get that']);
+      return { ok: has(d.text, "I'm the North Star Support Bot.") && !has(d.text, "didn't understand that"), got: d }; } },
+
+  { input:'that made no sense to me', from:'MENU', expect:'capability explanation',
+    run:function(){ var d = drive(['that made no sense to me']);
+      return { ok: has(d.text, "I'm the North Star Support Bot."), got: d }; } },
+
+  /* ---- revision 2: order sense, bot mentions, unsure answers ---- */
+
+  { input:'i want to order', from:'MENU', expect:'asks which sense, does not demand a number',
+    run:function(){ var d = drive(['i want to order']);
+      return { ok: has(d.text, 'Are you looking up an existing order, or looking to buy something?') &&
+                   d.result.quick.join('|') === 'Look up an order|Find gear to buy', got: d }; } },
+
+  { input:'wanted to order something else', from:'MENU', expect:'recommendation flow',
+    run:function(){ var d = drive(['wanted to order something else']);
+      return { ok: (d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2') && !has(d.text, 'order number'), got: d }; } },
+
+  { input:'havent ordered yet, im saying I want to order', from:'MENU', expect:'recommendation flow',
+    run:function(){ var d = drive(['havent ordered yet, im saying I want to order']);
+      return { ok: (d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2') && !has(d.text, 'order number'), got: d }; } },
+
+  { input:'i want to order what all options you have', from:'MENU', expect:'recommendation flow, purchase wins over lookup',
+    run:function(){ var d = drive(['i want to order what all options you have']);
+      return { ok: (d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2') && !has(d.text, 'order number'), got: d }; } },
+
+  { input:'i want to buy a tent', from:'MENU', expect:'recommendation flow',
+    run:function(){ var d = drive(['i want to buy a tent']);
+      return { ok: d.session.state === 'REC_Q1' || d.session.state === 'REC_Q2', got: d }; } },
+
+  { input:'where is my order', from:'MENU', expect:'order flow, unchanged by the sense rule',
+    run:function(){ var d = drive(['where is my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'track order 111', from:'MENU', expect:'shipped status, unchanged by the sense rule',
+    run:function(){ var d = drive(['track order 111']);
+      return { ok: has(d.text, 'Order #111 has shipped'), got: d }; } },
+
+  { input:'order number is 222', from:'MENU', expect:'processing status',
+    run:function(){ var d = drive(['order number is 222']);
+      return { ok: has(d.text, 'Order #222 is processing'), got: d }; } },
+
+  { input:'your useless', from:'MENU', expect:'escalation, not the return policy',
+    run:function(){ var d = drive(['your useless']);
+      return { ok: d.session.state === 'LIVE_AGENT' && !has(d.text, '30 days to return'), got: d }; } },
+
+  { input:'this bot is annoying', from:'LIVE_AGENT', expect:'does NOT exit the handoff',
+    run:function(){ var d = drive(['talk to a human', 'this bot is annoying']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'you are acting like a bot', from:'LIVE_AGENT', expect:'does NOT exit the handoff',
+    run:function(){ var d = drive(['talk to a human', 'you are acting like a bot']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'put me back with the chatbot', from:'LIVE_AGENT', expect:'exits to MENU',
+    run:function(){ var d = drive(['talk to a human', 'put me back with the chatbot']);
+      return { ok: d.session.state === 'MENU' && has(d.text, '[Back with the support bot]'), got: d }; } },
+
+  { input:'what about 222', from:'LIVE_AGENT', expect:'processing status, not a redirect',
+    run:function(){ var d = drive(['talk to a human', 'what about 222']);
+      return { ok: has(d.text, 'Order #222 is processing') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'no sorry 111', from:'MENU after an anything-else question', expect:'shipped status, not the closing line',
+    run:function(){ var d = drive(['return policy', 'no sorry 111']);
+      return { ok: has(d.text, 'Order #111 has shipped') && !has(d.text, 'Have a good one out there'), got: d }; } },
+
+  { input:'no', from:'MENU after an anything-else question', expect:'still the closing line',
+    run:function(){ var d = drive(['return policy', 'no']);
+      return { ok: has(d.text, 'Have a good one out there'), got: d }; } },
+
+  { input:'333 then no', from:'LIVE_AGENT', expect:'delivery problem response, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', '333', 'no']);
+      return { ok: has(d.text, 'Our return window is 30 days from delivery') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'333 then yes', from:'LIVE_AGENT', expect:'glad to hear it, stays in LIVE_AGENT',
+    run:function(){ var d = drive(['talk to a human', '333', 'yes']);
+      return { ok: has(d.text, 'Glad to hear it. Anything else I can help with?') && d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'not sure', from:'REC_Q1', expect:'no-problem reprompt, not a fallback',
+    run:function(){ var d = drive(['help me find gear', 'not sure']);
+      return { ok: has(d.text, "Here's what most people start with") && d.session.state === 'REC_Q1' && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'i dont know', from:'REC_Q2', expect:'no-problem reprompt',
+    run:function(){ var d = drive(['help me find gear', 'Camping', 'i dont know']);
+      return { ok: has(d.text, "What's the weather usually like when you head out?") && d.session.state === 'REC_Q2', got: d }; } },
+
+  { input:'you tell me', from:'REC_Q1', expect:'no-problem reprompt',
+    run:function(){ var d = drive(['help me find gear', 'you tell me']);
+      return { ok: has(d.text, "Here's what most people start with") && d.session.state === 'REC_Q1', got: d }; } },
+
+  { input:'how do i order', from:'MENU', expect:'asks which sense rather than demanding a number',
+    run:function(){ var d = drive(['how do i order']);
+      return { ok: has(d.text, 'Are you looking up an existing order, or looking to buy something?'), got: d }; } },
+
+  { input:'what is happening with my purchase', from:'MENU', expect:'purchase as a noun is a lookup, not a buy',
+    run:function(){ var d = drive(['what is happening with my purchase']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'why did the bot transfer me', from:'LIVE_AGENT', expect:'a question about the transfer does not perform one',
+    run:function(){ var d = drive(['talk to a human', 'why did the bot transfer me']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  /* ---- unified stuck counter: three misses of any kind escalate ---- */
+
+  { input:'123 then not sure then no idea', from:'AWAIT_ORDER', expect:'mixed misses accumulate, third escalates',
+    run:function(){ var d = drive(['where is my order', '123', 'not sure', 'no idea']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'not sure then 999 then dont remember', from:'AWAIT_ORDER', expect:'escalates on the third regardless of type',
+    run:function(){ var d = drive(['where is my order', 'not sure', '999', 'dont remember']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'the live log sequence', from:'AWAIT_ORDER', expect:'nope I dont remember, i dont know i said, not sure escalates by the third',
+    run:function(){ var d = drive(['where is my order', 'nope I dont remember', 'i dont know i said', 'not sure']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'three unrelated gibberish strings', from:'MENU', expect:'escalates on the third',
+    run:function(){ var d = drive(['asdkjhasd', 'qwoieur', 'zmxncbv']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'three gibberish answers', from:'REC_Q1', expect:'escalates on the third',
+    run:function(){ var d = drive(['help me find gear', 'asdkjhasd', 'qwerty', 'zxcvbn']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'123 then 111 then 456', from:'AWAIT_ORDER', expect:'a successful resolution resets the count',
+    run:function(){ var d = drive(['where is my order', '123', '111', 'where is my order', '456']);
+      return { ok: d.session.stuckCount === 1 && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'123 then a different flow then back', from:'AWAIT_ORDER', expect:'a global interrupt resets the count',
+    run:function(){ var d = drive(['where is my order', '123', 'whats your return policy']);
+      return { ok: d.session.stuckCount === 0 && d.session.state === 'MENU', got: d }; } },
+
+  { input:'not sure', from:'AWAIT_ORDER', expect:'acknowledged, offers the agent side, counts as one miss',
+    run:function(){ var d = drive(['where is my order', 'not sure']);
+      return { ok: has(d.text, "If you can't find it, I can pull it up on the agent side instead.") &&
+                   d.session.stuckCount === 1 && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'stuck escalation fires at most once', from:'MENU', expect:'a second stuck run does not escalate again',
+    run:function(){ var d = drive(['asdkjhasd', 'qwoieur', 'zmxncbv', 'menu', 'aaaa', 'bbbb', 'cccc']);
+      return { ok: d.session.state === 'MENU' && has(d.text, "Sorry, I didn't understand that.") && d.session.escalationUsed === true, got: d }; } },
+
+  /* ---- polish pass: clause-bounded negation, wider gear vocabulary ---- */
+
+  { input:'i dont like it, want to return', from:'ORDER_333_FOLLOWUP', expect:'delivery-problem response on the first turn',
+    run:function(){ var d = drive(['333', 'i dont like it, want to return']);
+      return { ok: has(d.text, 'Our return window is 30 days from delivery') && !has(d.text, 'What would you like to do instead'), got: d }; } },
+
+  { input:'i said i dont like it, want to return it', from:'ORDER_333_FOLLOWUP', expect:'delivery-problem response on the first turn',
+    run:function(){ var d = drive(['333', 'i said i dont like it, want to return it']);
+      return { ok: has(d.text, 'Our return window is 30 days from delivery'), got: d }; } },
+
+  { input:'need to return this', from:'ORDER_333_FOLLOWUP', expect:'delivery-problem response',
+    run:function(){ var d = drive(['333', 'need to return this']);
+      return { ok: has(d.text, 'Our return window is 30 days from delivery'), got: d }; } },
+
+  { input:'dont connect me with live agent', from:'MENU', expect:'no regression, still stays with the bot',
+    run:function(){ var d = drive(['dont connect me with live agent']);
+      return { ok: d.session.state === 'MENU' && has(d.text, "keep you here with the support bot"), got: d }; } },
+
+  { input:'dont tell me about shipping just find my package', from:'MENU', expect:'no regression, shipping suppressed, order runs',
+    run:function(){ var d = drive(['dont tell me about shipping just find my package']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && !has(d.text, '3 to 5 business days'), got: d }; } },
+
+  { input:'treking', from:'REC_Q1', expect:'maps to hiking and backpacking',
+    run:function(){ var d = drive(['help me find gear', 'treking']);
+      return { ok: d.session.state === 'REC_Q2' && d.session.recActivity === 'hiking', got: d }; } },
+
+  { input:'fishing', from:'REC_Q1', expect:'maps to everyday outdoors',
+    run:function(){ var d = drive(['help me find gear', 'fishing']);
+      return { ok: d.session.state === 'REC_Q2' && d.session.recActivity === 'everyday', got: d }; } },
+
+  { input:'sky diving', from:'REC_Q1', expect:'out-of-scope response, chips intact, not counted as a miss',
+    run:function(){ var d = drive(['help me find gear', 'sky diving']);
+      return { ok: has(d.text, "outside what we carry") && d.session.state === 'REC_Q1' &&
+                   d.result.quick.length === 4 && d.session.stuckCount === 0, got: d }; } },
+
+  { input:'heat', from:'REC_Q2', expect:'maps to warm and dry',
+    run:function(){ var d = drive(['help me find gear', 'Camping', 'heat']);
+      return { ok: has(d.text, 'warm and dry conditions') && d.session.state === 'MENU', got: d }; } },
+
+  { input:'freezing', from:'REC_Q2', expect:'maps to cold and snowy',
+    run:function(){ var d = drive(['help me find gear', 'Camping', 'freezing']);
+      return { ok: has(d.text, 'cold and snowy conditions') && has(d.text, 'four-season tents'), got: d }; } },
+
+  { input:'all sixteen chip label combinations', from:'REC_Q1', expect:'the exact chip labels still resolve unchanged',
+    run:function(){
+      var acts = ['Hiking and backpacking', 'Camping', 'Winter sports', 'Everyday outdoors'];
+      var conds = ['Warm and dry', 'Cool and variable', 'Cold and snowy', 'Wet and rainy'];
+      var seen = {}, count = 0;
+      for(var a = 0; a < acts.length; a++){
+        for(var c = 0; c < conds.length; c++){
+          var d = drive(['help me find gear', acts[a], conds[c]]);
+          if(!has(d.text, 'start with') && !has(d.text, 'is where')){ return { ok:false, got:d }; }
+          if(!seen[d.text]){ seen[d.text] = true; count += 1; }
+        }
+      }
+      return { ok: count === 16, got: { session:{ state:'MENU' }, text: count + ' distinct of 16' } }; } },
+
+  { input:'three Group A answers', from:'LIVE_AGENT', expect:'three different lookup prefixes, no consecutive repeat',
+    run:function(){
+      var c = driveCollect(['talk to a human', 'what is your return policy', 'how long does shipping take', '111']);
+      var firstLines = c.texts.slice(1).map(function(t){ return t.split('\n')[0]; });
+      var distinct = firstLines[0] !== firstLines[1] && firstLines[1] !== firstLines[2] && firstLines[0] !== firstLines[2];
+      return { ok: distinct, got: { session: c.session, text: firstLines.join(' >> ') } }; } }
+];
+
+function runSelfTest(){
+  var results = [];
+  var passed = 0;
+  for(var i = 0; i < TEST_CASES.length; i++){
+    var c = TEST_CASES[i];
+    var outcome;
+    try {
+      outcome = c.run();
+    } catch(err){
+      outcome = { ok:false, got:{ session:{ state:'error' }, text:String(err && err.message ? err.message : err) } };
+    }
+    if(outcome.ok){ passed += 1; }
+    results.push({
+      number: i + 1,
+      input: c.input,
+      from: c.from,
+      expect: c.expect,
+      ok: outcome.ok,
+      state: outcome.got.session.state,
+      output: outcome.got.text
+    });
+  }
+  return { total: TEST_CASES.length, passed: passed, results: results };
+}
+
+function renderSelfTest(){
+  var report = runSelfTest();
+  elSummary.textContent = report.passed + ' of ' + report.total + ' checks passed';
+  elCases.innerHTML = '';
+  for(var i = 0; i < report.results.length; i++){
+    var r = report.results[i];
+    var li = document.createElement('li');
+    li.className = 'case ' + (r.ok ? 'pass' : 'fail');
+
+    var badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = r.ok ? 'PASS' : 'FAIL';
+
+    var body = document.createElement('span');
+    var head = document.createElement('span');
+    head.innerHTML = r.number + '. <code>' + esc(r.input) + '</code> from ' + esc(r.from);
+    var meta = document.createElement('span');
+    meta.className = 'meta';
+    meta.textContent = 'Expected: ' + r.expect + '. Got: state ' + r.state + '. ' + oneLine(r.output);
+
+    body.appendChild(head);
+    body.appendChild(meta);
+    li.appendChild(badge);
+    li.appendChild(body);
+    elCases.appendChild(li);
+  }
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+
+function boot(){
+  elTranscript = document.getElementById('transcript');
+  elQuick = document.getElementById('quick');
+  elInput = document.getElementById('input');
+  elSend = document.getElementById('send');
+  elComposer = document.getElementById('composer');
+  elHdr = document.getElementById('hdr');
+  elTitle = document.getElementById('hdrTitle');
+  elStatusText = document.getElementById('hdrStatusText');
+  elPanel = document.getElementById('panel');
+  elSummary = document.getElementById('summary');
+  elCases = document.getElementById('cases');
+  elToggle = document.getElementById('selftestToggle');
+
+  elComposer.addEventListener('submit', function(e){
+    e.preventDefault();
+    send(elInput.value);
+  });
+
+  /* Enter sends. Handled explicitly rather than relying on implicit form
+     submission, which some embedded browser views do not trigger. */
+  elInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      send(elInput.value);
+    }
+  });
+
+  elToggle.addEventListener('click', function(){
+    var open = elPanel.hasAttribute('hidden');
+    if(open){
+      renderSelfTest();
+      elPanel.removeAttribute('hidden');
+      elPanel.scrollTop = 0;   /* always open on the summary line */
+      elToggle.textContent = 'Hide self-test';
+      elToggle.setAttribute('aria-expanded', 'true');
+    } else {
+      elPanel.setAttribute('hidden', '');
+      elToggle.textContent = 'Run self-test';
+      elToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  /* Present before it speaks. Skipped entirely when motion is reduced, and the
+     engine is untouched either way, so headless runs are unaffected. */
+  var stillMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(stillMotion){
+    addMessage('bot', COPY.greeting, false);
+    setQuick(QUICK.menu);
+  } else {
+    setBusy(true);
+    showTyping();
+    window.setTimeout(function(){
+      hideTyping();
+      addMessage('bot', COPY.greeting, false);
+      setBusy(false);
+      setQuick(QUICK.menu);
+      scrollDown();
+      elInput.focus();
+    }, 700);
+  }
+  elInput.focus();
+}
+
+if(typeof document !== 'undefined'){ boot(); }
+
+/* Exposed so the conversation engine can be exercised outside the
+   browser during development. The page itself never reads this. */
+(typeof window !== 'undefined' ? window : globalThis).NORTH_STAR = {
+  COPY: COPY,
+  ORDERS: ORDERS,
+  createSession: createSession,
+  handle: handle,
+  normalize: normalize,
+  matchIntent: matchIntent,
+  /* matches against raw text, so clause boundaries are taken into account */
+  intentOf: function(raw){ currentClauseBreaks = clauseBreaks(raw); return matchIntent(normalize(raw)); },
+  runSelfTest: runSelfTest
+};
+
+}());
+</script>
+</body>
+</html>
