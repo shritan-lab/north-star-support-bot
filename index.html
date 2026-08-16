@@ -944,7 +944,11 @@ var NEGATION_EXCEPTIONS = ['no idea', 'no clue', 'not sure', 'no luck', 'not cer
    and leaves the request for a human standing. */
 var NEGATION_STOP_MARKERS = [
   'just', 'instead', 'but', 'however', 'though',
-  'want to', 'i want', 'i need', 'need to', 'i would', 'id like', 'id like to', 'i just'
+  'want to', 'i want', 'i need', 'need to', 'i would', 'id like', 'id like to', 'i just',
+  /* self-correction. "no actually X" is "not what I said before, I meant X",
+     never "not X", so the negation has to stop the moment one of these lands. */
+  'actually', 'i mean', 'i meant', 'wait', 'sorry i mean', 'let me rephrase', 'scratch that',
+  'rather', 'make that'
 ];
 var NEGATION_MAX_REACH = 8;
 
@@ -1891,8 +1895,10 @@ function globalTurn(session, norm, prefix){
     return runIntent(session, 'PRODUCT_REC', norm, switchPrefixFor('PRODUCT_REC', norm, prefix));
   }
   if(sense === 'ask'){
+    /* A clarifying question with chips is progress, like the gear questions, so
+       it is not a miss. It does not reset the counter either: asking the same
+       thing repeatedly must still be able to reach escalation. */
     session.state = 'MENU';
-    session.stuckCount = 0;
     return reply([bot(COPY.orderSenseQuestion)], QUICK.orderSense);
   }
 
@@ -1909,10 +1915,18 @@ function globalTurn(session, norm, prefix){
   if(loose && ORDERS[loose]){ return resolveOrder(session, loose, null); }
 
   if(match.suppressed.length){
-    session.state = 'MENU';
-    session.stuckCount = 0;
     var wasAgent = match.suppressed.indexOf('LIVE_AGENT') !== -1;
-    return reply([bot(wasAgent ? COPY.negatedAgent : COPY.negatedOther)], QUICK.menu);
+    /* "I'll keep you here with the support bot" is what the user asked for, so
+       it resolves. "What would you like to do instead?" answers nothing, so it
+       is a miss and counts toward escalation like any other dead end. */
+    if(wasAgent){
+      session.state = 'MENU';
+      session.stuckCount = 0;
+      return reply([bot(COPY.negatedAgent)], QUICK.menu);
+    }
+    if(countMiss(session)){ return stuckEscalate(session); }
+    session.state = 'MENU';
+    return reply([bot(COPY.negatedOther)], QUICK.menu);
   }
 
   /* Last resort only. Nothing the user asked for was recognized, and they are
@@ -3067,6 +3081,38 @@ var TEST_CASES = [
         }
       }
       return { ok: count === 16, got: { session:{ state:'MENU' }, text: count + ' distinct of 16' } }; } },
+
+  /* ---- self-correction terminates negation, and the negation fallback counts ---- */
+
+  { input:'no actually tell return policy', from:'MENU', expect:'RETURNS on the first turn, not the negation fallback',
+    run:function(){ var d = drive(['no actually tell return policy']);
+      return { ok: has(d.text, '30 days to return an item') && !has(d.text, 'What would you like to do instead'), got: d }; } },
+
+  { input:'no actually track my order', from:'MENU', expect:'order flow on the first turn',
+    run:function(){ var d = drive(['no actually track my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'no wait i want returns', from:'MENU', expect:'RETURNS',
+    run:function(){ var d = drive(['no wait i want returns']);
+      return { ok: has(d.text, '30 days to return an item'), got: d }; } },
+
+  { input:'no i mean shipping', from:'MENU', expect:'SHIPPING',
+    run:function(){ var d = drive(['no i mean shipping']);
+      return { ok: has(d.text, '3 to 5 business days') && has(d.text, '1 to 2 business days'), got: d }; } },
+
+  { input:'the negation fallback three times', from:'MENU', expect:'counts as a miss each time, escalates on the third',
+    run:function(){
+      var d = drive(['i dont need gear i need my money', 'i dont need gear i need my money', 'i dont need gear i need my money']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  { input:'negation fallback mixed with other misses', from:'MENU', expect:'misses of different kinds still add up to three',
+    run:function(){
+      var d = drive(['i dont need gear i need my money', 'asdkjhasd', 'qwoieur']);
+      return { ok: d.session.state === 'LIVE_AGENT', got: d }; } },
+
+  { input:'dont connect me with live agent', from:'MENU', expect:'resolves, so it does not count as a miss',
+    run:function(){ var d = drive(['dont connect me with live agent']);
+      return { ok: d.session.state === 'MENU' && d.session.stuckCount === 0 && has(d.text, 'keep you here with the support bot'), got: d }; } },
 
   { input:'three Group A answers', from:'LIVE_AGENT', expect:'three different lookup prefixes, no consecutive repeat',
     run:function(){

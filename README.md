@@ -9,7 +9,7 @@ Open `index.html` in any browser. No install, no build step, no API keys, no
 accounts, no setup. Double clicking the file works, including with the network
 switched off.
 
-**Live demo:** `https://shritan-lab.github.io/north-star-support-bot/`
+**Live demo:** `<paste your GitHub Pages URL here>`
 
 ## Files
 
@@ -17,7 +17,7 @@ switched off.
 |---|---|
 | `index.html` | The complete bot. One self-contained file, all HTML, CSS, and JavaScript inline. |
 | `FLOW.md` | Conversation flow map, as a Mermaid state diagram and as plain text. |
-| `TESTS.md` | The 177 test cases with the actual observed output for each. |
+| `TESTS.md` | The 184 test cases with the actual observed output for each. |
 | `README.md` | This file, including the requirement coverage table. |
 
 ---
@@ -59,11 +59,14 @@ example sentences. `its already been so many days and still havent received it`,
 `my item was crushed`, `can i send this thing back to you` and `get your manager`
 all route correctly. See the phrase coverage audit note at the end of this file.
 
-Four things sit on top of the scorer:
+Several things sit on top of the scorer:
 
 **Clause-bounded negation.** A negation never reaches past a comma, a
-semicolon, or a pivot word like `but`, `want to` or `i need`, because
-"i dont like it, want to return" is structurally "not X, but Y", never "not Y".
+semicolon, a pivot word like `but`, `want to` or `i need`, or a
+self-correction like `actually`, `i mean` or `wait`. "i dont like it, want to
+return" is structurally "not X, but Y", and "no actually tell return policy" is
+"not what I said, I meant returns". Neither is a refusal of the thing that
+follows.
 
 **Sense disambiguation.** `order` is both a noun and a verb. `i want to order
 something` is a purchase and goes to the gear flow; `where is my order` is a
@@ -73,11 +76,11 @@ an order number the user may not have. Same treatment for `purchase`, while
 `buy` and `shop` never reach order tracking.
 
 **Negation.** The bot never does the thing it was just told not to do.
-`dont connect me with live agent` keeps the user with the bot. The negation
-reaches forward until the user pivots to what they do want, so
-`dont tell me about shipping just find my package` suppresses shipping and runs
-the package lookup, while `no bot i want human` refuses the bot and connects the
-human. A bare `no` answering "Anything else?" is untouched.
+`dont connect me with live agent` keeps the user with the bot, and
+`dont tell me about shipping just find my package` suppresses shipping while
+still running the package lookup. A bare `no` answering "Anything else?" is
+untouched. When a negation suppresses the only thing that matched, the reply
+that asks what the user wants instead counts as a miss, so it cannot loop.
 
 **Stemming.** A second normalized form strips a trailing `s` from tokens of four
 or more characters, so `gears`, `jackets` and `orders` reach `gear`, `jacket`
@@ -165,7 +168,7 @@ specific product and never a price.
 
 | # | Criterion | Where it is addressed |
 |---|---|---|
-| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 177 in `TESTS.md` |
+| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 184 in `TESTS.md` |
 | 6.b | Quality and clarity of conversation flows | guided chips at every step, no dead ends, topic switching mid question, mapped in `FLOW.md` |
 | 6.c | Accuracy of responses based on provided data | all copy in one `CONTENT` block, diffed character for character against the brief, nothing invented |
 | 6.d | Effectiveness of intent handling | weighted matcher with tie breaking, 40 of 40 unseen customer phrasings routed correctly in the coverage audit |
@@ -194,13 +197,13 @@ honestly when asked what it is.
 
 ## Self-test
 
-The footer link `Diagnostics` opens a panel that runs 177 cases through the
+The footer link `Diagnostics` opens a panel that runs 184 cases through the
 real intent matcher and the real state machine and reports pass or fail per
 case. It is not a mock: each case builds a fresh session and calls `handle()`,
 the same function the chat window calls on every message. A broken response
 shows up as `FAIL` in the panel.
 
-Current result: **177 of 177 checks passed**. Full output in `TESTS.md`.
+Current result: **184 of 184 checks passed**. Full output in `TESTS.md`.
 
 ## How the code is laid out
 
@@ -211,7 +214,7 @@ The script is in six commented sections, in this order:
 3. `MATCHER`: normalization, scoring, order number extraction.
 4. `STATE`: the state machine, `handle()` and its helpers.
 5. `RENDER`: DOM rendering, typing indicator, quick replies.
-6. `SELFTEST`: the 177 cases and the panel.
+6. `SELFTEST`: the 184 cases and the panel.
 
 `CONTENT` is first on purpose. Checking the bot's accuracy means comparing its
 responses to the provided data, so those responses sit at the top of the file in
@@ -235,8 +238,9 @@ cover, and that answer is not counted as a miss.
 
 ## Getting unstuck
 
-Escalation runs on one shared `stuckCount`, not on per-flow counters. Any dead
-end increments it: an unusable order number, an "I don't know" in the order
+Escalation runs on one shared `stuckCount`, not on per-flow counters. Any reply
+that does not actually answer the user increments it, including the negation
+fallback. Any dead end increments it: an unusable order number, an "I don't know" in the order
 flow, an unrecognized answer to a gear question, or gibberish at the menu. Any
 success resets it. At three misses of any kind, in any combination, the bot
 stops trying and fetches a person. That escalation fires at most once per
@@ -315,7 +319,7 @@ they still win when typed alone and lose to any longer, more specific phrase.
 
 | Check | Result |
 |---|---|
-| Self-test | 177 of 177 checks passed |
+| Self-test | 184 of 184 checks passed |
 | Copy diff against the brief | 89 of 89, character for character |
 | Phrase coverage audit | 40 of 40 after, 0 of 40 before |
 | Console errors on load and through every flow | 0 |
@@ -325,7 +329,7 @@ they still win when typed alone and lose to any longer, more specific phrase.
 | `http://`, `https://`, `fetch(`, `type="module"`, `import(`, `<link rel="stylesheet"`, `<script src` | 0 matches each |
 | Em dashes and en dashes across all four files | 0 |
 | Horizontal overflow at 360px | none |
-| File size | 143.7 KB, single file |
+| File size | 155.4 KB, single file |
 
 The favicon is an inline SVG data URI, so the browser never requests
 `/favicon.ico` and never logs a 404 for it. The colon in the SVG namespace

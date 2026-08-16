@@ -1,6 +1,6 @@
 # Test Results
 
-All 177 cases below are executed by the self-test panel inside `index.html`
+All 184 cases below are executed by the self-test panel inside `index.html`
 (footer link `Run self-test`). Each case builds a fresh session and drives it
 through `handle()`, the same function the chat window calls. Nothing is stubbed
 and no result is hardcoded: a failing case renders as `FAIL` in the panel.
@@ -12,7 +12,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 ## Summary
 
 ```
-177 of 177 checks passed
+184 of 184 checks passed
 ```
 
 | # | Input | Starting state | Expected | Observed output | End state | Result |
@@ -193,7 +193,14 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 174 | `heat` | REC_Q2 | maps to warm and dry | For camping in warm and dry conditions, start with **three-season tents and lightweight sleeping bags**. Worth adding: camp furniture and a shade tarp. / Want me to help with anything else? | `MENU` | PASS |
 | 175 | `freezing` | REC_Q2 | maps to cold and snowy | For camping in cold and snowy conditions, start with **four-season tents and cold-rated sleeping bags**. Worth adding: an insulated sleeping pad and a camp stove. / Want me to help with anything else? | `MENU` | PASS |
 | 176 | `all sixteen chip label combinations` | REC_Q1 | the exact chip labels still resolve unchanged | 16 distinct of 16 | `MENU` | PASS |
-| 177 | `three Group A answers` | LIVE_AGENT | three different lookup prefixes, no consecutive repeat | Sure, I can pull that up. >> Let me check that for you. >> Of course, here you go. | `LIVE_AGENT` | PASS |
+| 177 | `no actually tell return policy` | MENU | RETURNS on the first turn, not the negation fallback | Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
+| 178 | `no actually track my order` | MENU | order flow on the first turn | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 179 | `no wait i want returns` | MENU | RETURNS | Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
+| 180 | `no i mean shipping` | MENU | SHIPPING | Standard shipping takes 3 to 5 business days. Expedited shipping takes 1 to 2 business days. / Anything else? | `MENU` | PASS |
+| 181 | `the negation fallback three times` | MENU | counts as a miss each time, escalates on the third | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 182 | `negation fallback mixed with other misses` | MENU | misses of different kinds still add up to three | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 183 | `dont connect me with live agent` | MENU | resolves, so it does not count as a miss | Understood, I'll keep you here with the support bot. What can I help you with? | `MENU` | PASS |
+| 184 | `three Group A answers` | LIVE_AGENT | three different lookup prefixes, no consecutive repeat | Sure, I can pull that up. >> Let me check that for you. >> Of course, here you go. | `LIVE_AGENT` | PASS |
 
 ## Raw run log
 
@@ -202,7 +209,7 @@ calling `runSelfTest()` outside the browser. `boot()` is skipped because
 `document` is undefined there, so only the conversation engine runs.
 
 ```text
-SELF-TEST RESULT: 177 of 177 checks passed
+SELF-TEST RESULT: 184 of 184 checks passed
 
 [PASS] 1. input: where is my order  |  from: MENU
         expected: state AWAIT_ORDER, bot asks for the order number
@@ -1301,7 +1308,60 @@ SELF-TEST RESULT: 177 of 177 checks passed
         end state: MENU
         output: 16 distinct of 16
 
-[PASS] 177. input: three Group A answers  |  from: LIVE_AGENT
+[PASS] 177. input: no actually tell return policy  |  from: MENU
+        expected: RETURNS on the first turn, not the negation fallback
+        end state: MENU
+        output: Returns and exchanges at North Star:
+                
+                You have 30 days to return an item. It needs to be unused and in its original packaging.
+                
+                Exchanges use the same process, so start here either way: northstaroutfitters.com/returns
+                
+                Anything else?
+
+[PASS] 178. input: no actually track my order  |  from: MENU
+        expected: order flow on the first turn
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 179. input: no wait i want returns  |  from: MENU
+        expected: RETURNS
+        end state: MENU
+        output: Returns and exchanges at North Star:
+                
+                You have 30 days to return an item. It needs to be unused and in its original packaging.
+                
+                Exchanges use the same process, so start here either way: northstaroutfitters.com/returns
+                
+                Anything else?
+
+[PASS] 180. input: no i mean shipping  |  from: MENU
+        expected: SHIPPING
+        end state: MENU
+        output: Standard shipping takes 3 to 5 business days. Expedited shipping takes 1 to 2 business days.
+                
+                Anything else?
+
+[PASS] 181. input: the negation fallback three times  |  from: MENU
+        expected: counts as a miss each time, escalates on the third
+        end state: LIVE_AGENT
+        output: I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 182. input: negation fallback mixed with other misses  |  from: MENU
+        expected: misses of different kinds still add up to three
+        end state: LIVE_AGENT
+        output: I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 183. input: dont connect me with live agent  |  from: MENU
+        expected: resolves, so it does not count as a miss
+        end state: MENU
+        output: Understood, I'll keep you here with the support bot. What can I help you with?
+
+[PASS] 184. input: three Group A answers  |  from: LIVE_AGENT
         expected: three different lookup prefixes, no consecutive repeat
         end state: LIVE_AGENT
         output: Sure, I can pull that up. >> Let me check that for you. >> Of course, here you go.

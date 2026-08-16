@@ -111,7 +111,7 @@ stateDiagram-v2
       |        + link          |             |            |    |  stand" |
       |            |           |             |            |    +----+----+
       |            +-----+-----+             |            |         |
-      |                  |                   |            |    2nd miss
+      |                  |                   |            |    3rd miss
       |                  v                   v            |         |
       |                MENU              +---------+      |         |
       |                                  | REC_Q1  |      |         |
@@ -143,7 +143,7 @@ stateDiagram-v2
   +---------------------------------------+   |           |         |
        |                                      |           |         |
    1st invalid: "I couldn't find an order     |           |         |
-   digits, like 111. Want to try again?"      |           |         |
+   with that number. Give it another check."  |           |         |
        |  stays in AWAIT_ORDER                |           |         |
        |                                      |           |         |
        |  a message with NO digits is not a   |           |         |
@@ -315,7 +315,7 @@ There is now a single `stuckCount`. It increments on any dead end:
 |---|---|
 | `AWAIT_ORDER` | not a valid order number, not a global interrupt, not the disambiguation answer, including "I don't know" answers |
 | `REC_Q1`, `REC_Q2` | not a chip label, not a cancel, not an "I don't know" answer, not a global interrupt |
-| `MENU` | matches no intent |
+| `MENU` | matches no intent, or a negation suppressed the only thing that matched |
 
 It resets to zero on any successful resolution, on a global interrupt that
 changes flow, and whenever a state is entered fresh. At three, the bot stops
@@ -367,13 +367,21 @@ forward until the user pivots to what they do want (`just`, `instead`, `but`,
 | `return policy, no order tracking` | returns |
 | `no` on its own | unchanged, still a plain no |
 
+Self-correction ends a negation immediately. `actually`, `i mean`, `wait`,
+`scratch that` and `rather` all reset it, because "no actually X" is "not what
+I said before, I meant X", never "not X". `no actually tell return policy`
+resolves as returns on the first turn.
+
 Bare `no` and `not` only count as markers in messages longer than three tokens,
 and never inside the idioms `no idea`, `no clue`, `not sure`. A marker sitting
 at the start of the phrase it matched (`never arrived`, `no sign of it`) is part
 of the phrase, not a negation of it.
 
 When a negation suppresses everything and nothing else matched, the bot says so
-and asks what the user wants instead, rather than silently doing nothing.
+and asks what the user wants instead, rather than silently doing nothing. That
+reply answers nothing, so it counts toward the stuck counter like any other dead
+end and cannot loop forever. Refusing the agent is different: "I'll keep you
+here with the support bot" is exactly what the user asked for, so it resolves.
 
 ## "Order" is a noun and a verb
 
