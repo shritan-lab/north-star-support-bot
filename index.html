@@ -2560,7 +2560,7 @@ var TEST_CASES = [
     run:function(){ var d = drive(['my item was crushed']);
       return { ok: hasAll(d.text, RETURN_FACTS), got: d }; } },
 
-  { input:'my item was crushed', from:'AWAIT_ORDER', expect:'returns response as a global interrupt, invalidOrderStreak unchanged',
+  { input:'my item was crushed', from:'AWAIT_ORDER', expect:'returns response as a global interrupt, stuckCount stays 0',
     run:function(){ var d = drive(['where is my order', 'my item was crushed']);
       return { ok: hasAll(d.text, RETURN_FACTS) && d.session.stuckCount === 0, got: d }; } },
 
@@ -2600,7 +2600,7 @@ var TEST_CASES = [
     run:function(){ var d = drive(['bye']);
       return { ok: has(d.text, 'Happy to help. Have a good one out there.') && d.session.stuckCount === 0, got: d }; } },
 
-  { input:'asdkjhasd then thanks then asdkjhasd', from:'MENU', expect:'courtesy resets the streak, so the second miss does not escalate',
+  { input:'asdkjhasd then thanks then asdkjhasd', from:'MENU', expect:'courtesy resets stuckCount to 0, so the next miss is only strike one, not enough to escalate',
     run:function(){ var d = drive(['asdkjhasd', 'thanks', 'asdkjhasd']);
       return { ok: has(d.text, "Sorry, I didn't understand that.") && d.session.stuckCount === 1 && d.session.state === 'MENU', got: d }; } },
 

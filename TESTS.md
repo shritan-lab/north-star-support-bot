@@ -51,7 +51,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 32 | `I need a jacket` | MENU | state REC_Q1, no slot pre-filled | Let's find the right gear. What are you heading out for? | `REC_Q1` | PASS |
 | 33 | `no` | AWAIT_ORDER | re-prompt for the number, counted as one miss, no escalation | I'll need your order number to look that up. You can also type menu to go back. | `AWAIT_ORDER` | PASS |
 | 34 | `my item was crushed` | MENU | returns and exchanges response | Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
-| 35 | `my item was crushed` | AWAIT_ORDER | returns response as a global interrupt, invalidOrderStreak unchanged | Sure, let's switch gears. / Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
+| 35 | `my item was crushed` | AWAIT_ORDER | returns response as a global interrupt, stuckCount stays 0 | Sure, let's switch gears. / Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
 | 36 | `no three times` | AWAIT_ORDER | non-numeric misses now count, so the third escalates | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 37 | `999 then 888 then 777` | AWAIT_ORDER | third failed lookup escalates to LIVE_AGENT | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 38 | `what is your return policy` | LIVE_AGENT | Riley answers with the exact returns copy, stays in LIVE_AGENT | Sure, I can pull that up. / Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `LIVE_AGENT` | PASS |
@@ -61,7 +61,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 42 | `111 then yes` | MENU | What can I help you with? with menu chips | What can I help you with? | `MENU` | PASS |
 | 43 | `thanks` | MENU | courtesy response, stuckCount stays 0 | Anytime. Anything else I can help with? | `MENU` | PASS |
 | 44 | `bye` | MENU | closing line, stuckCount stays 0 | Happy to help. Have a good one out there. | `MENU` | PASS |
-| 45 | `asdkjhasd then thanks then asdkjhasd` | MENU | courtesy resets the streak, so the second miss does not escalate | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 45 | `asdkjhasd then thanks then asdkjhasd` | MENU | courtesy resets stuckCount to 0, so the next miss is only strike one, not enough to escalate | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
 | 46 | `333 then no` | ORDER_333_FOLLOWUP | delivery problem response, NOT the closing line | Sorry about that. Our return window is 30 days from delivery, and items need to be unused and in their original packaging. You can start a return here: northstaroutfitters.com/returns / If you'd rather sort it out with a person, I can connect you with a live agent. | `MENU` | PASS |
 | 47 | `help` | MENU | menu reset copy | Back to the main menu. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent. | `MENU` | PASS |
 | 48 | `#111` | MENU | shipped response | Order #111 has shipped and it's arriving tomorrow. / Anything else? | `MENU` | PASS |
@@ -497,7 +497,7 @@ SELF-TEST RESULT: 234 of 234 checks passed
                 Anything else?
 
 [PASS] 35. input: my item was crushed  |  from: AWAIT_ORDER
-        expected: returns response as a global interrupt, invalidOrderStreak unchanged
+        expected: returns response as a global interrupt, stuckCount stays 0
         end state: MENU
         output: Sure, let's switch gears.
                 
@@ -571,7 +571,7 @@ SELF-TEST RESULT: 234 of 234 checks passed
         output: Happy to help. Have a good one out there.
 
 [PASS] 45. input: asdkjhasd then thanks then asdkjhasd  |  from: MENU
-        expected: courtesy resets the streak, so the second miss does not escalate
+        expected: courtesy resets stuckCount to 0, so the next miss is only strike one, not enough to escalate
         end state: MENU
         output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
 
@@ -1719,7 +1719,7 @@ SELF-TEST RESULT: 234 of 234 checks passed
 
 ```
 
-## Coverage beyond the 28 required cases
+## Coverage beyond the panel's automated cases
 
 These were exercised manually against the same engine during the build and
 are not part of the panel:

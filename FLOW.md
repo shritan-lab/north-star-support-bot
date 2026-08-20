@@ -554,16 +554,18 @@ to the menu.
 | Variable | Purpose | Reset when |
 |---|---|---|
 | `currentState` | the active state | every turn |
-| `fallbackStreak` | consecutive unrecognized inputs | any successful intent match, including courtesy |
-| `invalidOrderStreak` | consecutive **failed order lookups** | a valid order, or a new order flow |
-| `slotMissStreak` | consecutive unrecognized answers inside one slot state | any recognized answer, cancel, or global interrupt |
-| `recActivity` | answer to recommendation question 1 | a new recommendation flow, or once the result is delivered |
-| `recCondition` | answer to recommendation question 2 | a new recommendation flow, or once the result is delivered |
+| `stuckCount` | consecutive dead ends of any kind, combined | any successful resolution, a global interrupt that changes flow, or a state entered fresh |
+| `escalationUsed` | blocks a second connect sequence mid stuck episode | a genuine return from `LIVE_AGENT` to the bot, via `exitToMenu()` or `handBackToBot()` |
+| `agentFollowUp` | Riley asked the order 333 delivery follow up and is waiting on yes or no | checked and cleared on the very next message in `LIVE_AGENT`, whatever it contains |
+| `recActivity` | answer to recommendation question 1 | a new recommendation flow, a cancel, or once the result is delivered |
+| `recCondition` | answer to recommendation question 2 | a new recommendation flow, a cancel, or once the result is delivered |
 | `awaitingAnythingElse` | the last bot message ended with a closing question | recomputed after every turn |
 | `ackIndex` | which live agent acknowledgment was used last | never, it rotates |
 | `prefixIndex` | which live agent lookup prefix was used last | never, it rotates |
+| `recTemplateIndex` | which recommendation result template was used last | never, it rotates |
 
-Both streak counters escalate to `LIVE_AGENT` on the second consecutive miss.
-A message with no digits in it is never counted as a failed order lookup, so
-talking to the bot while it waits for a number cannot push the user into an
-escalation they did not ask for.
+`stuckCount` and `escalationUsed` are described in full in "One stuck
+counter, three strikes" earlier in this file. The three separate streak
+counters this table used to list, one for fallbacks, one for invalid order
+numbers, one for slot misses, each escalating on its second consecutive
+miss, were replaced by the single `stuckCount` above, not supplemented by it.
