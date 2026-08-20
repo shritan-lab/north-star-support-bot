@@ -1,6 +1,6 @@
 # Test Results
 
-All 204 cases below are executed by the self-test panel inside `index.html`
+All 213 cases below are executed by the self-test panel inside `index.html`
 (footer link `Run self-test`). Each case builds a fresh session and drives it
 through `handle()`, the same function the chat window calls. Nothing is stubbed
 and no result is hardcoded: a failing case renders as `FAIL` in the panel.
@@ -12,7 +12,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 ## Summary
 
 ```
-204 of 204 checks passed
+213 of 213 checks passed
 ```
 
 | # | Input | Starting state | Expected | Observed output | End state | Result |
@@ -221,6 +221,15 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 202 | `explicit live agent chip after an episode` | MENU | talk to a human still works regardless of the counter | Connecting you with a live agent now. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 203 | `escalate, hand back via order lookup, escalate again` | MENU | handBackToBot is also a genuine exit, second episode escalates | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it. / [Back with the support bot] / Happy to help. What's your order number? >> I'll need your order number to look that up. You can also type menu to go back. >> I'll need your order number to look that up. You can also type menu to go back. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 204 | `escalate, hand back via gear rec, escalate again` | MENU | same fix, the product recommendation handback path | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it. / [Back with the support bot] / Let's find the right gear. What are you heading out for? >> Sorry, I didn't understand that. Which of these is closest? >> Sorry, I didn't understand that. Which of these is closest? >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 205 | `are you a bot` | MENU | honest bot-identity disclosure, consistent with the LIVE_AGENT answer | I'm the North Star Support Bot. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent. | `MENU` | PASS |
+| 206 | `where is my abc` | MENU | placeholder object, standard fallback, not AWAIT_ORDER | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 207 | `track my xyz` | MENU | placeholder object, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 208 | `where is my asdf` | MENU | placeholder object, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 209 | `where is my shit` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 210 | `where is my blah` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 211 | `where is my stuff` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 212 | `where is my package` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 213 | `where is my order` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
 
 ## Raw run log
 
@@ -229,7 +238,7 @@ calling `runSelfTest()` outside the browser. `boot()` is skipped because
 `document` is undefined there, so only the conversation engine runs.
 
 ```text
-SELF-TEST RESULT: 204 of 204 checks passed
+SELF-TEST RESULT: 213 of 213 checks passed
 
 [PASS] 1. input: where is my order  |  from: MENU
         expected: state AWAIT_ORDER, bot asks for the order number
@@ -1536,6 +1545,51 @@ SELF-TEST RESULT: 204 of 204 checks passed
                 Let's find the right gear. What are you heading out for? >> Sorry, I didn't understand that. Which of these is closest? >> Sorry, I didn't understand that. Which of these is closest? >> I want to make sure you get sorted out. Let me connect you with a live agent.
                 [Live Agent connected]
                 Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 205. input: are you a bot  |  from: MENU
+        expected: honest bot-identity disclosure, consistent with the LIVE_AGENT answer
+        end state: MENU
+        output: I'm the North Star Support Bot. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent.
+
+[PASS] 206. input: where is my abc  |  from: MENU
+        expected: placeholder object, standard fallback, not AWAIT_ORDER
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 207. input: track my xyz  |  from: MENU
+        expected: placeholder object, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 208. input: where is my asdf  |  from: MENU
+        expected: placeholder object, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 209. input: where is my shit  |  from: MENU
+        expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 210. input: where is my blah  |  from: MENU
+        expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 211. input: where is my stuff  |  from: MENU
+        expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 212. input: where is my package  |  from: MENU
+        expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 213. input: where is my order  |  from: MENU
+        expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
 
 ```
 

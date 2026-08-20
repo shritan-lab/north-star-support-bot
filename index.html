@@ -1086,6 +1086,36 @@ function hasJunkToken(raw){
   return false;
 }
 
+/* A closed, explicit list of words that are only ever meaningless test or
+   placeholder filler, never a genuine reference to a physical order. This is
+   not a vagueness filter: "stuff", "package", "thing" and even profanity are
+   all things a real customer might plausibly type and must keep routing to
+   AWAIT_ORDER as they always have. The distinction is "is this word ever
+   anything other than a placeholder", not "is this a real word". */
+var ORDER_PLACEHOLDER_OBJECTS = [
+  'abc', 'xyz', 'asdf', 'foo', 'bar', 'lorem', 'qwerty', 'foobar',
+  'test', 'testing', 'sample', 'placeholder'
+];
+var ORDER_PLACEHOLDER_TRIGGERS = [
+  'where is my', 'wheres my', 'track my', 'tracking my', 'check my', 'checking my'
+];
+
+/* True only when the entire normalized message is one of the order-tracking
+   trigger phrases above followed by nothing but a single placeholder word,
+   the same shape as "where is my <abc>". A real object after the trigger,
+   however crude or vague, leaves this false and the message routes exactly
+   as it always has. */
+function isOrderTrackingPlaceholder(norm){
+  for(var i = 0; i < ORDER_PLACEHOLDER_TRIGGERS.length; i++){
+    var trigger = ORDER_PLACEHOLDER_TRIGGERS[i];
+    if(norm.indexOf(trigger) === 0){
+      var rest = norm.slice(trigger.length).replace(/^\s+/, '');
+      if(ORDER_PLACEHOLDER_OBJECTS.indexOf(rest) !== -1){ return true; }
+    }
+  }
+  return false;
+}
+
 /* Token indexes that begin a new clause, derived from the raw text before
    punctuation is stripped. A negation must not reach past one of these:
    "i dont like it, want to return" is "not X, but Y", never "not Y".
@@ -2115,6 +2145,16 @@ function handle(session, raw){
 
   currentClauseBreaks = clauseBreaks(raw);
   var norm = normalize(raw);
+
+  /* Same treatment as a junk token: "where is my abc" reads as an
+     order-tracking request with a placeholder object, not a real one, so it
+     never reaches AWAIT_ORDER as if no number had been given. */
+  if(norm && isOrderTrackingPlaceholder(norm)){
+    var placeholderResult = unrecognizedInput(session);
+    session.awaitingAnythingElse = endsWithAnythingElse(placeholderResult);
+    return placeholderResult;
+  }
+
   var result = norm ? route(session, norm) : unrecognizedInput(session);
 
   /* Remember whether the bot just asked "Anything else?", so a bare yes or no
@@ -3302,7 +3342,43 @@ var TEST_CASES = [
 
   { input:'are you a bot', from:'MENU', expect:'honest bot-identity disclosure, consistent with the LIVE_AGENT answer',
     run:function(){ var d = drive(['are you a bot']);
-      return { ok: has(d.text, "I'm the North Star Support Bot.") && d.session.state === 'MENU', got: d }; } }
+      return { ok: has(d.text, "I'm the North Star Support Bot.") && d.session.state === 'MENU', got: d }; } },
+
+  /* A closed, explicit placeholder-object list, not a vagueness filter. Only
+     these exact filler words as the entire object of an order-tracking
+     trigger fall back; any real (even crude) object must keep routing to
+     AWAIT_ORDER exactly as before. */
+  { input:'where is my abc', from:'MENU', expect:'placeholder object, standard fallback, not AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my abc']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'track my xyz', from:'MENU', expect:'placeholder object, standard fallback',
+    run:function(){ var d = drive(['track my xyz']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my asdf', from:'MENU', expect:'placeholder object, standard fallback',
+    run:function(){ var d = drive(['where is my asdf']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my shit', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my shit']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my blah', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my blah']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my stuff', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my stuff']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my package', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my package']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my order', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } }
 ];
 
 function runSelfTest(){
