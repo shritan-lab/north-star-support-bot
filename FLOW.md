@@ -201,6 +201,38 @@ flow" and "One stuck counter, three strikes" below.
 
 ---
 
+## Junk token gate
+
+The very first check in `handle()`, ahead of intent matching and ahead of the
+global interrupt rule below, in every state including `LIVE_AGENT`. If any raw
+token contains `< > { } [ ] | ~` or a backtick, matching never runs at all.
+
+This exists because `where is my <abc>?` matches ORDER_TRACKING on its
+wording, but `<abc>` is placeholder or injected syntax, never a real attempt
+at an order number. Without the gate the bot would enter `AWAIT_ORDER` and ask
+for a number it had effectively already been given, garbage. A real wrong
+number such as `999` is not junk and still goes through the normal
+invalid-order path with its own copy and its own counter.
+
+What happens next branches on state, through the same `unrecognizedInput()`
+helper that the empty-after-normalize case uses (a message that strips to
+nothing, like `!!!`), because both are dead ends detected before the
+state-specific routing that would otherwise make this distinction:
+
+- **MENU, AWAIT_ORDER, REC_Q1, REC_Q2** (any bot-controlled state): the
+  standard fallback response, same as any other miss. Counts toward the
+  shared stuck counter, so three junk messages in a row still escalates.
+- **LIVE_AGENT**: the generic fallback is never called, because it resets
+  state to MENU, which would silently drop the user out of the handoff
+  without updating the header or the speaker label, and a later third miss
+  would re-run the full connect sequence on a user who never left it. Instead
+  Riley answers with the same rotating actionable redirect used for any other
+  unrecognized input in the handoff. No header change, no divider, no
+  reintroduction, state stays `LIVE_AGENT`, and this does not count toward the
+  stuck counter, matching how an unrecognized message in the handoff already
+  behaved before junk tokens existed as a category. There is nowhere further
+  to escalate to: the user is already with a person.
+
 ## Global interrupt rule
 
 From **any** state other than `LIVE_AGENT`, these are recognized before slot
@@ -324,11 +356,24 @@ trying and fetches a person:
 > I want to make sure you get sorted out. Let me connect you with a live agent.
 
 Misses of different kinds add up, so one bad number plus two "I don't know"
-answers escalates just as a plain three-in-a-row does. The escalation itself
-fires at most once per session, so nobody ping-pongs between bot and agent, and
-the `Talk to a live agent` chip is on every one of these messages so the user can
-go earlier if they want. That is requirement 3.e.ii.2 satisfied in sequence:
-options first, then escalation.
+answers escalates just as a plain three-in-a-row does. The `Talk to a live
+agent` chip is on every one of these messages so the user can go earlier if
+they want. That is requirement 3.e.ii.2 satisfied in sequence: options first,
+then escalation.
+
+The cap on firing the connect sequence is once per stuck episode, not once
+per session. An `escalationUsed` flag blocks a second `stuckEscalate()` while
+it is set, so the bot does not ping-pong between the fallback and the agent
+mid-episode, but there are two genuine exits from `LIVE_AGENT` back to the
+bot, and both clear that flag along with the state and the counter:
+`exitToMenu()`, reached by the `Back to main menu` chip or the equivalent
+request in plain text, and `handBackToBot()`, reached when Riley hands a
+multi-turn request, an order lookup or a gear question, back to the bot
+mid-conversation instead. A user who gets helped, keeps talking to the bot,
+and later runs into three fresh misses escalates again, cleanly, with the
+full connect sequence, regardless of which of the two exits they took.
+Neither flag reset happens on ordinary messages inside the handoff, only on
+an actual exit, so more junk while still connected cannot re-trigger it.
 
 In the order flow specifically, "I don't know" is acknowledged rather than
 treated as gibberish, but it still counts:

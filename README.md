@@ -18,7 +18,7 @@ Video walkthrough: https://www.youtube.com/watch?v=TAb3tjHzmgE
 |---|---|
 | `index.html` | The complete bot. One self-contained file, all HTML, CSS, and JavaScript inline. |
 | `FLOW.md` | Conversation flow map, as a Mermaid state diagram and as plain text. |
-| `TESTS.md` | The 184 test cases with the actual observed output for each. |
+| `TESTS.md` | The 204 test cases with the actual observed output for each. |
 | `README.md` | This file, including the requirement coverage table. |
 
 ---
@@ -83,6 +83,16 @@ still running the package lookup. A bare `no` answering "Anything else?" is
 untouched. When a negation suppresses the only thing that matched, the reply
 that asks what the user wants instead counts as a miss, so it cannot loop.
 
+**Junk tokens.** A raw token containing `< > { } [ ] | ~` or a backtick is never
+genuine customer language, so it is caught before intent matching runs at all,
+ahead of everything above and regardless of state. `where is my <abc>?` matches
+ORDER_TRACKING on its wording, but the bot answers with the standard fallback
+instead of asking for an order number, because `<abc>` was never a plausible
+one to begin with. A real wrong number like `999` is unaffected and still goes
+through the normal invalid-order path with its own copy and its own counter.
+This closes a client-reported edge case: a garbage identifier following
+tracking phrasing was previously treated as if no number had been given yet.
+
 **Stemming.** A second normalized form strips a trailing `s` from tokens of four
 or more characters, so `gears`, `jackets` and `orders` reach `gear`, `jacket`
 and `order`. Both forms are scored and the higher wins, so stemming can only add
@@ -138,7 +148,7 @@ specific product and never a price.
 | 1.a | Name: North Star Support Bot (or similar) | header title, `COPY.greeting`, `COPY.agentExit` | open the page |
 | 1.b | Tone: friendly, helpful, outdoorsy, concise | every string in the `CONTENT` block, for example "Glad to hear it. Enjoy the trail." | `333` then `Yes, all good` |
 | 1.c | Audience: North American outdoor consumers | activity and condition sets in `REC_ACTIVITIES` and `REC_CONDITIONS`, and the category language in `REC_MATRIX` | `what should i buy` then `Camping` then `Cold and snowy` |
-| 2.a.i | Order Tracking: Ask for order number. Return simulated status | `AWAIT_ORDER` state, `extractOrderNumber()`, `resolveOrder()`, `ORDERS` | `where is my order` then `111` |
+| 2.a.i | Order Tracking: Ask for order number. Return simulated status | `AWAIT_ORDER` state, `extractOrderNumber()`, `resolveOrder()`, `ORDERS`. Garbage identifiers such as `<abc>` are caught by `hasJunkToken()` before the slot is filled, a client-reported edge case | `where is my order` then `111`, and separately `where is my <abc>?` |
 | 2.a.ii | Return & Exchanges: Explain return policy. Provide returns link | `COPY.returns`, RETURNS branch of `runIntent()` | `what is your return policy` |
 | 2.a.iii | Product Recommendations: Ask 1-2 clarifying questions. Recommend product category | `REC_Q1` and `REC_Q2` states, `recAdvance()`, `REC_MATRIX`, `recResultText()` | `help me find gear` |
 | 2.a.iv | Human Handoff: Handle fallback or explicit request. Transition to "Live Agent" state | `enterLiveAgent()` reached both from `fallback()` and from the LIVE_AGENT intent, `setAgentMode()` | `talk to a human`, and separately `asdkjhasd` three times |
@@ -169,7 +179,7 @@ specific product and never a price.
 
 | # | Criterion | Where it is addressed |
 |---|---|---|
-| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 184 in `TESTS.md` |
+| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 204 in `TESTS.md` |
 | 6.b | Quality and clarity of conversation flows | guided chips at every step, no dead ends, topic switching mid question, mapped in `FLOW.md` |
 | 6.c | Accuracy of responses based on provided data | all copy in one `CONTENT` block, diffed character for character against the brief, nothing invented |
 | 6.d | Effectiveness of intent handling | weighted matcher with tie breaking, 40 of 40 unseen customer phrasings routed correctly in the coverage audit |
@@ -198,13 +208,13 @@ honestly when asked what it is.
 
 ## Self-test
 
-The footer link `Diagnostics` opens a panel that runs 184 cases through the
+The footer link `Diagnostics` opens a panel that runs 204 cases through the
 real intent matcher and the real state machine and reports pass or fail per
 case. It is not a mock: each case builds a fresh session and calls `handle()`,
 the same function the chat window calls on every message. A broken response
 shows up as `FAIL` in the panel.
 
-Current result: **184 of 184 checks passed**. Full output in `TESTS.md`.
+Current result: **204 of 204 checks passed**. Full output in `TESTS.md`.
 
 ## How the code is laid out
 
@@ -215,7 +225,7 @@ The script is in six commented sections, in this order:
 3. `MATCHER`: normalization, scoring, order number extraction.
 4. `STATE`: the state machine, `handle()` and its helpers.
 5. `RENDER`: DOM rendering, typing indicator, quick replies.
-6. `SELFTEST`: the 184 cases and the panel.
+6. `SELFTEST`: the 204 cases and the panel.
 
 `CONTENT` is first on purpose. Checking the bot's accuracy means comparing its
 responses to the provided data, so those responses sit at the top of the file in
@@ -241,12 +251,25 @@ cover, and that answer is not counted as a miss.
 
 Escalation runs on one shared `stuckCount`, not on per-flow counters. Any reply
 that does not actually answer the user increments it, including the negation
-fallback. Any dead end increments it: an unusable order number, an "I don't know" in the order
-flow, an unrecognized answer to a gear question, or gibberish at the menu. Any
-success resets it. At three misses of any kind, in any combination, the bot
-stops trying and fetches a person. That escalation fires at most once per
-session, and the `Talk to a live agent` chip is always on screen so the user can
-go earlier by choice rather than by exhaustion.
+fallback and a junk-token dead end. Any dead end increments it: an unusable
+order number, an "I don't know" in the order flow, an unrecognized answer to a
+gear question, or gibberish at the menu. Any success resets it. At three
+misses of any kind, in any combination, the bot stops trying and fetches a
+person.
+
+That cap is once per stuck episode, not once per session. There are two
+genuine exits from the live agent back to the bot: `exitToMenu()`, reached by
+`Back to main menu` or the same request in plain text, and `handBackToBot()`,
+reached when Riley hands a multi-turn request, an order lookup or a gear
+question, back to the bot mid-conversation. Both reset the eligibility flag
+along with the state and the counter, so a user who gets helped, keeps
+talking to the bot, and later gets stuck again can escalate a second or third
+time in the same conversation, however they left the handoff. Neither resets
+on every message inside the handoff, only on an actual exit, so a fresh run of
+misses while still connected to Riley cannot re-trigger the connect sequence.
+The `Talk to a live agent` chip is always on screen regardless of this
+counter, so the user can go straight there by choice rather than by
+exhaustion, at any point, escalation count notwithstanding.
 
 ## Design notes
 
@@ -320,7 +343,7 @@ they still win when typed alone and lose to any longer, more specific phrase.
 
 | Check | Result |
 |---|---|
-| Self-test | 184 of 184 checks passed |
+| Self-test | 204 of 204 checks passed |
 | Copy diff against the brief | 89 of 89, character for character |
 | Phrase coverage audit | 40 of 40 after, 0 of 40 before |
 | Console errors on load and through every flow | 0 |

@@ -1,6 +1,6 @@
 # Test Results
 
-All 184 cases below are executed by the self-test panel inside `index.html`
+All 204 cases below are executed by the self-test panel inside `index.html`
 (footer link `Run self-test`). Each case builds a fresh session and drives it
 through `handle()`, the same function the chat window calls. Nothing is stubbed
 and no result is hardcoded: a failing case renders as `FAIL` in the panel.
@@ -12,7 +12,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 ## Summary
 
 ```
-184 of 184 checks passed
+204 of 204 checks passed
 ```
 
 | # | Input | Starting state | Expected | Observed output | End state | Result |
@@ -107,7 +107,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 88 | `no you are a live agent, transfer back to the normal chatbot` | LIVE_AGENT | exits to MENU | [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? | `MENU` | PASS |
 | 89 | `i want to speak to human` | LIVE_AGENT | still the already-connected response | You're already connected with me, Riley. Go ahead. | `LIVE_AGENT` | PASS |
 | 90 | `123` | AWAIT_ORDER | no order number named anywhere in the response | I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. | `AWAIT_ORDER` | PASS |
-| 91 | `123 repeatedly across two order flows` | AWAIT_ORDER | escalates at most once, then repeats the message | I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. | `AWAIT_ORDER` | PASS |
+| 91 | `123 repeatedly across two order flows` | AWAIT_ORDER | escalates once, and again after a genuine exit and a fresh stuck run | Happy to help. What's your order number? >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? >> Happy to help. What's your order number? >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> I'm not finding an order with that number on my end. Can you double check it? | `LIVE_AGENT` | PASS |
 | 92 | `what can you help me with` | LIVE_AGENT | capability answer, not an acknowledgment | I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. | `LIVE_AGENT` | PASS |
 | 93 | `what can you do` | MENU | capability answer | I'm the North Star Support Bot. I can track an order, help with returns and exchanges, recommend gear, or connect you with a live agent. | `MENU` | PASS |
 | 94 | `hi four times` | LIVE_AGENT | greeting every time, never a case note | Hi again. What can I help with? \| Hi again. What can I help with? \| Hi again. What can I help with? \| Hi again. What can I help with? | `LIVE_AGENT` | PASS |
@@ -181,7 +181,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 162 | `123 then 111 then 456` | AWAIT_ORDER | a successful resolution resets the count | I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. | `AWAIT_ORDER` | PASS |
 | 163 | `123 then a different flow then back` | AWAIT_ORDER | a global interrupt resets the count | Sure, let's switch gears. / Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `MENU` | PASS |
 | 164 | `not sure` | AWAIT_ORDER | acknowledged, offers the agent side, counts as one miss | No worries. If you can't find it, I can pull it up on the agent side instead. | `AWAIT_ORDER` | PASS |
-| 165 | `stuck escalation fires at most once` | MENU | a second stuck run does not escalate again | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 165 | `stuck escalation caps per episode, not per session` | MENU | a second stuck run escalates again after a genuine exit | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 166 | `i dont like it, want to return` | ORDER_333_FOLLOWUP | delivery-problem response on the first turn | Sorry about that. Our return window is 30 days from delivery, and items need to be unused and in their original packaging. You can start a return here: northstaroutfitters.com/returns / If you'd rather sort it out with a person, I can connect you with a live agent. | `MENU` | PASS |
 | 167 | `i said i dont like it, want to return it` | ORDER_333_FOLLOWUP | delivery-problem response on the first turn | Sorry about that. Our return window is 30 days from delivery, and items need to be unused and in their original packaging. You can start a return here: northstaroutfitters.com/returns / If you'd rather sort it out with a person, I can connect you with a live agent. | `MENU` | PASS |
 | 168 | `need to return this` | ORDER_333_FOLLOWUP | delivery-problem response | Sorry about that. Our return window is 30 days from delivery, and items need to be unused and in their original packaging. You can start a return here: northstaroutfitters.com/returns / If you'd rather sort it out with a person, I can connect you with a live agent. | `MENU` | PASS |
@@ -201,6 +201,26 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 182 | `negation fallback mixed with other misses` | MENU | misses of different kinds still add up to three | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 | 183 | `dont connect me with live agent` | MENU | resolves, so it does not count as a miss | Understood, I'll keep you here with the support bot. What can I help you with? | `MENU` | PASS |
 | 184 | `three Group A answers` | LIVE_AGENT | three different lookup prefixes, no consecutive repeat | Sure, I can pull that up. >> Let me check that for you. >> Of course, here you go. | `LIVE_AGENT` | PASS |
+| 185 | `where is my <abc>?` | MENU | standard fallback, not AWAIT_ORDER | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 186 | `where is my <abc>?` | AWAIT_ORDER (mid-flow) | standard fallback, not treated as a slot answer | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 187 | `track order {123}` | MENU | standard fallback response | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 188 | `[track my package]` | MENU | standard fallback response | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 189 | `where is my order` | MENU, no junk | unchanged, enters AWAIT_ORDER normally | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 190 | `999` | AWAIT_ORDER, real wrong number | unchanged, existing invalid order path, not the junk path | I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. | `AWAIT_ORDER` | PASS |
+| 191 | `<script> tag, injection style` | MENU | standard fallback response, injection style input is not exempt | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 192 | `three junk messages in a row` | MENU | counts as a miss each time, escalates on the third | I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 193 | `talk to a human, then <abc>` | LIVE_AGENT | Riley's redirect, no divider, no reintro, state stays LIVE_AGENT | I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. | `LIVE_AGENT` | PASS |
+| 194 | `three junk messages in LIVE_AGENT` | LIVE_AGENT | three rotating redirects, no consecutive repeat, never a second connect sequence | I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. >> That one's outside what I can pull up here. I can help with an order lookup, returns and exchanges, or gear recommendations through the support bot. >> I'm not able to answer that one. What I can do is check an order, explain returns and exchanges, or get you gear recommendations. | `LIVE_AGENT` | PASS |
+| 195 | `junk then a real question in LIVE_AGENT` | LIVE_AGENT | Riley answers correctly, proving state was never lost | Sure, I can pull that up. / Returns and exchanges at North Star: / You have 30 days to return an item. It needs to be unused and in its original packaging. / Exchanges use the same process, so start here either way: northstaroutfitters.com/returns / Anything else? | `LIVE_AGENT` | PASS |
+| 196 | `MENU junk then talk to a human` | MENU | connects normally with one clean sequence | Connecting you with a live agent now. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 197 | `!!!` | LIVE_AGENT | empty-normalize input does not reset state, unlike the pre-fix bug | I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. | `LIVE_AGENT` | PASS |
+| 198 | `escalate, exit, escalate again` | MENU | second stuck episode escalates a second time | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 199 | `escalate, exit, only two misses` | MENU | counter genuinely resets to 0, two is not enough to escalate again | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 200 | `escalate, stay connected, more junk` | LIVE_AGENT | no exit means no new episode, still never a second connect sequence | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. >> That one's outside what I can pull up here. I can help with an order lookup, returns and exchanges, or gear recommendations through the support bot. >> I'm not able to answer that one. What I can do is check an order, explain returns and exchanges, or get you gear recommendations. | `LIVE_AGENT` | PASS |
+| 201 | `three separate escalations in one session` | MENU | all three fire cleanly across a long session | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot] / You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 202 | `explicit live agent chip after an episode` | MENU | talk to a human still works regardless of the counter | Connecting you with a live agent now. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 203 | `escalate, hand back via order lookup, escalate again` | MENU | handBackToBot is also a genuine exit, second episode escalates | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it. / [Back with the support bot] / Happy to help. What's your order number? >> I'll need your order number to look that up. You can also type menu to go back. >> I'll need your order number to look that up. You can also type menu to go back. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
+| 204 | `escalate, hand back via gear rec, escalate again` | MENU | same fix, the product recommendation handback path | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it. / [Back with the support bot] / Let's find the right gear. What are you heading out for? >> Sorry, I didn't understand that. Which of these is closest? >> Sorry, I didn't understand that. Which of these is closest? >> I want to make sure you get sorted out. Let me connect you with a live agent. / [Live Agent connected] / Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? | `LIVE_AGENT` | PASS |
 
 ## Raw run log
 
@@ -209,7 +229,7 @@ calling `runSelfTest()` outside the browser. `boot()` is skipped because
 `document` is undefined there, so only the conversation engine runs.
 
 ```text
-SELF-TEST RESULT: 184 of 184 checks passed
+SELF-TEST RESULT: 204 of 204 checks passed
 
 [PASS] 1. input: where is my order  |  from: MENU
         expected: state AWAIT_ORDER, bot asks for the order number
@@ -784,9 +804,14 @@ SELF-TEST RESULT: 184 of 184 checks passed
         output: I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up.
 
 [PASS] 91. input: 123 repeatedly across two order flows  |  from: AWAIT_ORDER
-        expected: escalates at most once, then repeats the message
-        end state: AWAIT_ORDER
-        output: I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up.
+        expected: escalates once, and again after a genuine exit and a fresh stuck run
+        end state: LIVE_AGENT
+        output: Happy to help. What's your order number? >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot]
+                You're back with the North Star Support Bot. What can I help you with? >> Happy to help. What's your order number? >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> I'm not finding an order with that number on my end. Can you double check it?
 
 [PASS] 92. input: what can you help me with  |  from: LIVE_AGENT
         expected: capability answer, not an acknowledgment
@@ -1238,10 +1263,15 @@ SELF-TEST RESULT: 184 of 184 checks passed
         end state: AWAIT_ORDER
         output: No worries. If you can't find it, I can pull it up on the agent side instead.
 
-[PASS] 165. input: stuck escalation fires at most once  |  from: MENU
-        expected: a second stuck run does not escalate again
-        end state: MENU
-        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+[PASS] 165. input: stuck escalation caps per episode, not per session  |  from: MENU
+        expected: a second stuck run escalates again after a genuine exit
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot]
+                You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
 
 [PASS] 166. input: i dont like it, want to return  |  from: ORDER_333_FOLLOWUP
         expected: delivery-problem response on the first turn
@@ -1365,6 +1395,147 @@ SELF-TEST RESULT: 184 of 184 checks passed
         expected: three different lookup prefixes, no consecutive repeat
         end state: LIVE_AGENT
         output: Sure, I can pull that up. >> Let me check that for you. >> Of course, here you go.
+
+[PASS] 185. input: where is my <abc>?  |  from: MENU
+        expected: standard fallback, not AWAIT_ORDER
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 186. input: where is my <abc>?  |  from: AWAIT_ORDER (mid-flow)
+        expected: standard fallback, not treated as a slot answer
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 187. input: track order {123}  |  from: MENU
+        expected: standard fallback response
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 188. input: [track my package]  |  from: MENU
+        expected: standard fallback response
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 189. input: where is my order  |  from: MENU, no junk
+        expected: unchanged, enters AWAIT_ORDER normally
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 190. input: 999  |  from: AWAIT_ORDER, real wrong number
+        expected: unchanged, existing invalid order path, not the junk path
+        end state: AWAIT_ORDER
+        output: I couldn't find an order with that number. Give it another check, or I can connect you with a live agent to look it up.
+
+[PASS] 191. input: <script> tag, injection style  |  from: MENU
+        expected: standard fallback response, injection style input is not exempt
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 192. input: three junk messages in a row  |  from: MENU
+        expected: counts as a miss each time, escalates on the third
+        end state: LIVE_AGENT
+        output: I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 193. input: talk to a human, then <abc>  |  from: LIVE_AGENT
+        expected: Riley's redirect, no divider, no reintro, state stays LIVE_AGENT
+        end state: LIVE_AGENT
+        output: I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations.
+
+[PASS] 194. input: three junk messages in LIVE_AGENT  |  from: LIVE_AGENT
+        expected: three rotating redirects, no consecutive repeat, never a second connect sequence
+        end state: LIVE_AGENT
+        output: I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. >> That one's outside what I can pull up here. I can help with an order lookup, returns and exchanges, or gear recommendations through the support bot. >> I'm not able to answer that one. What I can do is check an order, explain returns and exchanges, or get you gear recommendations.
+
+[PASS] 195. input: junk then a real question in LIVE_AGENT  |  from: LIVE_AGENT
+        expected: Riley answers correctly, proving state was never lost
+        end state: LIVE_AGENT
+        output: Sure, I can pull that up.
+                
+                Returns and exchanges at North Star:
+                
+                You have 30 days to return an item. It needs to be unused and in its original packaging.
+                
+                Exchanges use the same process, so start here either way: northstaroutfitters.com/returns
+                
+                Anything else?
+
+[PASS] 196. input: MENU junk then talk to a human  |  from: MENU
+        expected: connects normally with one clean sequence
+        end state: LIVE_AGENT
+        output: Connecting you with a live agent now.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 197. input: !!!  |  from: LIVE_AGENT
+        expected: empty-normalize input does not reset state, unlike the pre-fix bug
+        end state: LIVE_AGENT
+        output: I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations.
+
+[PASS] 198. input: escalate, exit, escalate again  |  from: MENU
+        expected: second stuck episode escalates a second time
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot]
+                You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 199. input: escalate, exit, only two misses  |  from: MENU
+        expected: counter genuinely resets to 0, two is not enough to escalate again
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 200. input: escalate, stay connected, more junk  |  from: LIVE_AGENT
+        expected: no exit means no new episode, still never a second connect sequence
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> I don't have that detail on hand. I can look up an order, go over returns and exchanges, or hand you back to the support bot for gear recommendations. >> That one's outside what I can pull up here. I can help with an order lookup, returns and exchanges, or gear recommendations through the support bot. >> I'm not able to answer that one. What I can do is check an order, explain returns and exchanges, or get you gear recommendations.
+
+[PASS] 201. input: three separate escalations in one session  |  from: MENU
+        expected: all three fire cleanly across a long session
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot]
+                You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> [Back with the support bot]
+                You're back with the North Star Support Bot. What can I help you with? >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 202. input: explicit live agent chip after an episode  |  from: MENU
+        expected: talk to a human still works regardless of the counter
+        end state: LIVE_AGENT
+        output: Connecting you with a live agent now.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 203. input: escalate, hand back via order lookup, escalate again  |  from: MENU
+        expected: handBackToBot is also a genuine exit, second episode escalates
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it.
+                [Back with the support bot]
+                Happy to help. What's your order number? >> I'll need your order number to look that up. You can also type menu to go back. >> I'll need your order number to look that up. You can also type menu to go back. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
+
+[PASS] 204. input: escalate, hand back via gear rec, escalate again  |  from: MENU
+        expected: same fix, the product recommendation handback path
+        end state: LIVE_AGENT
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with? >> Let me hand you back to the support bot, it'll walk you through it.
+                [Back with the support bot]
+                Let's find the right gear. What are you heading out for? >> Sorry, I didn't understand that. Which of these is closest? >> Sorry, I didn't understand that. Which of these is closest? >> I want to make sure you get sorted out. Let me connect you with a live agent.
+                [Live Agent connected]
+                Hi, this is Riley from the North Star team. I've got your full conversation history, so what can I help with?
 
 ```
 

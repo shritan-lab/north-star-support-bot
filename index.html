@@ -866,7 +866,8 @@ var INTENT_SOURCE = [
 
   { name:'IDENTITY', phrases:[
       'what is your name','whats your name','who are you','what are you',
-      'what should i call you','your name','who am i talking to'
+      'what should i call you','your name','who am i talking to',
+      'are you a bot','are you ai','are you real','is this a bot'
     ], phraseWeight:2, keywords:[], keywordWeight:2 },
 
   { name:'CONTACT', phrases:[
@@ -1070,6 +1071,19 @@ function normalize(text){
     .replace(/[^a-z0-9#\s]+/g, '')  /* strip punctuation, keep # */
     .replace(/\s+/g, ' ')
     .replace(/^ | $/g, '');
+}
+
+/* Symbols that never appear in genuine customer language: a reliable signal of
+   placeholder text or injected syntax, like "<abc>" typed where an order number
+   belongs. Checked on the raw message, before punctuation stripping, so a junk
+   token is caught even though it never survives normalize. */
+var JUNK_TOKEN_CHARS = /[<>{}\[\]|~`]/;
+function hasJunkToken(raw){
+  var tokens = String(raw).split(/\s+/);
+  for(var i = 0; i < tokens.length; i++){
+    if(JUNK_TOKEN_CHARS.test(tokens[i])){ return true; }
+  }
+  return false;
 }
 
 /* Token indexes that begin a new clause, derived from the raw text before
@@ -1492,7 +1506,9 @@ function createSession(){
   return {
     state: 'MENU',
     /* One counter for every way of being stuck, so misses of different kinds
-       still add up. Three strikes escalates, once per session. */
+       still add up. Three strikes escalates, once per stuck episode: the cap
+       resets on a genuine return from LIVE_AGENT, in exitToMenu(), so a later
+       stuck episode in the same session can escalate again. */
     stuckCount: 0,
     escalationUsed: false,
     agentFollowUp: false,         /* Riley asked the delivered follow-up question */
@@ -1543,6 +1559,11 @@ function nextAgentPrefix(session){
 function handBackToBot(session, openingText, openingQuick, nextState){
   session.state = nextState;
   session.stuckCount = 0;
+  /* This is also a genuine return from LIVE_AGENT to the bot, same as
+     exitToMenu(), just mid-conversation into a slot-filling state instead of
+     MENU. The escalation cap must end here too, or a user handed back this
+     way can never escalate again for the rest of the session. */
+  session.escalationUsed = false;
   return reply([
     bot(COPY.agentHandback, true),
     system(COPY.agentExitDivider),
@@ -1753,6 +1774,10 @@ function runIntent(session, intent, norm, prefix){
 function exitToMenu(session){
   session.state = 'MENU';
   session.stuckCount = 0;
+  /* The escalation cap is once per stuck episode, not once per session. A
+     genuine return to the bot ends that episode, so a later run of misses can
+     escalate again rather than repeating the fallback response forever. */
+  session.escalationUsed = false;
   return reply([system(COPY.agentExitDivider), bot(COPY.agentExit)], QUICK.menu);
 }
 
@@ -2059,13 +2084,38 @@ function route(session, norm){
   return fallback(session);
 }
 
+/* fallback() always resets to MENU, which is only correct for a bot-controlled
+   state. LIVE_AGENT has its own "I didn't get that" shape, Riley's rotating
+   redirect, that never touches state or the header and never re-runs the
+   connect sequence, because the user never left the handoff. Every call site
+   that can fire before intent matching even runs, ahead of the state-specific
+   routing that would otherwise make this distinction, must go through here
+   instead of calling fallback() directly. */
+function unrecognizedInput(session){
+  if(session.state === 'LIVE_AGENT'){
+    return reply([bot(nextAgentAck(session), true)], QUICK.agent);
+  }
+  return fallback(session);
+}
+
 function handle(session, raw){
   /* Empty or whitespace only input is never sent. */
   if(!raw || !String(raw).replace(/\s/g, '')){ return null; }
 
+  /* Junk tokens are checked before anything else in the pipeline, ahead of
+     intent matching and regardless of state, so "where is my <abc>" never
+     reaches AWAIT_ORDER as if no number had been given. A real wrong number
+     like 999 still goes through the normal invalid-order path; this is only
+     for symbol-junk that was never a plausible number to begin with. */
+  if(hasJunkToken(raw)){
+    var junkResult = unrecognizedInput(session);
+    session.awaitingAnythingElse = endsWithAnythingElse(junkResult);
+    return junkResult;
+  }
+
   currentClauseBreaks = clauseBreaks(raw);
   var norm = normalize(raw);
-  var result = norm ? route(session, norm) : fallback(session);
+  var result = norm ? route(session, norm) : unrecognizedInput(session);
 
   /* Remember whether the bot just asked "Anything else?", so a bare yes or no
      on the next turn is read as an answer instead of an unrecognized input. */
@@ -2695,12 +2745,14 @@ var TEST_CASES = [
       return { ok: has(d.text, "I couldn't find an order with that number.") && !leaks &&
                    d.result.quick.join('|') === 'Try again|Talk to a live agent|Back to main menu', got: d }; } },
 
-  { input:'123 repeatedly across two order flows', from:'AWAIT_ORDER', expect:'escalates at most once, then repeats the message',
+  { input:'123 repeatedly across two order flows', from:'AWAIT_ORDER', expect:'escalates once, and again after a genuine exit and a fresh stuck run',
     run:function(){
-      var d = drive(['where is my order', '123', '123', '123', 'menu',
+      var c = driveCollect(['where is my order', '123', '123', '123', 'menu',
                      'where is my order', '123', '123', '123', '123']);
-      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "I couldn't find an order with that number.") &&
-                   d.session.escalationUsed === true, got: d }; } },
+      var firstEscalation = c.texts[3].indexOf('Hi, this is Riley') !== -1;
+      var exited = c.texts[4].indexOf('North Star Support Bot') !== -1;
+      var secondEscalation = c.texts[8].indexOf('Hi, this is Riley') !== -1;
+      return { ok: firstEscalation && exited && secondEscalation && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
 
   { input:'what can you help me with', from:'LIVE_AGENT', expect:'capability answer, not an acknowledgment',
     run:function(){ var d = drive(['talk to a human', 'what can you help me with']);
@@ -3021,9 +3073,11 @@ var TEST_CASES = [
       return { ok: has(d.text, "If you can't find it, I can pull it up on the agent side instead.") &&
                    d.session.stuckCount === 1 && d.session.state === 'AWAIT_ORDER', got: d }; } },
 
-  { input:'stuck escalation fires at most once', from:'MENU', expect:'a second stuck run does not escalate again',
-    run:function(){ var d = drive(['asdkjhasd', 'qwoieur', 'zmxncbv', 'menu', 'aaaa', 'bbbb', 'cccc']);
-      return { ok: d.session.state === 'MENU' && has(d.text, "Sorry, I didn't understand that.") && d.session.escalationUsed === true, got: d }; } },
+  { input:'stuck escalation caps per episode, not per session', from:'MENU', expect:'a second stuck run escalates again after a genuine exit',
+    run:function(){ var c = driveCollect(['asdkjhasd', 'qwoieur', 'zmxncbv', 'menu', 'aaaa', 'bbbb', 'cccc']);
+      var firstEscalation = c.texts[2].indexOf('Hi, this is Riley') !== -1;
+      var secondEscalation = c.texts[6].indexOf('Hi, this is Riley') !== -1;
+      return { ok: firstEscalation && secondEscalation && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
 
   /* ---- polish pass: clause-bounded negation, wider gear vocabulary ---- */
 
@@ -3119,7 +3173,136 @@ var TEST_CASES = [
       var c = driveCollect(['talk to a human', 'what is your return policy', 'how long does shipping take', '111']);
       var firstLines = c.texts.slice(1).map(function(t){ return t.split('\n')[0]; });
       var distinct = firstLines[0] !== firstLines[1] && firstLines[1] !== firstLines[2] && firstLines[0] !== firstLines[2];
-      return { ok: distinct, got: { session: c.session, text: firstLines.join(' >> ') } }; } }
+      return { ok: distinct, got: { session: c.session, text: firstLines.join(' >> ') } }; } },
+
+  /* Junk tokens (placeholder or injected syntax) short circuit the whole
+     pipeline before intent matching, so an attempted identifier that was never
+     a plausible order number does not get treated as a real slot answer. */
+  { input:'where is my <abc>?', from:'MENU', expect:'standard fallback, not AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my <abc>?']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my <abc>?', from:'AWAIT_ORDER (mid-flow)', expect:'standard fallback, not treated as a slot answer',
+    run:function(){ var d = drive(['where is my order', 'where is my <abc>?']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'track order {123}', from:'MENU', expect:'standard fallback response',
+    run:function(){ var d = drive(['track order {123}']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'[track my package]', from:'MENU', expect:'standard fallback response',
+    run:function(){ var d = drive(['[track my package]']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my order', from:'MENU, no junk', expect:'unchanged, enters AWAIT_ORDER normally',
+    run:function(){ var d = drive(['where is my order']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'999', from:'AWAIT_ORDER, real wrong number', expect:'unchanged, existing invalid order path, not the junk path',
+    run:function(){ var d = drive(['where is my order', '999']);
+      return { ok: has(d.text, "I couldn't find an order with that number.") && d.session.state === 'AWAIT_ORDER', got: d }; } },
+
+  { input:'<script> tag, injection style', from:'MENU', expect:'standard fallback response, injection style input is not exempt',
+    run:function(){ var d = drive(['<script>alert(1)<' + '/script>']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'three junk messages in a row', from:'MENU', expect:'counts as a miss each time, escalates on the third',
+    run:function(){ var d = drive(['<abc>', '{123}', '[xyz]']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'I want to make sure you get sorted out.'), got: d }; } },
+
+  /* The junk-token gate must never call the generic fallback while already in
+     LIVE_AGENT: that function resets state to MENU without touching the
+     header, and a later third miss would re-run the connect sequence on a
+     user who never left the handoff. */
+  { input:'talk to a human, then <abc>', from:'LIVE_AGENT', expect:"Riley's redirect, no divider, no reintro, state stays LIVE_AGENT",
+    run:function(){ var d = drive(['talk to a human', 'where is my <abc>?']);
+      return { ok: d.session.state === 'LIVE_AGENT' &&
+        !has(d.text, 'Connecting you with a live agent now.') &&
+        !has(d.text, 'Hi, this is Riley') &&
+        (has(d.text, "I don't have that detail on hand") || has(d.text, "outside what I can pull up here") || has(d.text, "not able to answer that one")), got: d }; } },
+
+  { input:'three junk messages in LIVE_AGENT', from:'LIVE_AGENT', expect:'three rotating redirects, no consecutive repeat, never a second connect sequence',
+    run:function(){
+      var c = driveCollect(['talk to a human', 'where is my <abc>?', 'track order {123}', '[send help]']);
+      var junk = c.texts.slice(1);
+      var noSecondConnect = junk[0].indexOf('Hi, this is Riley') === -1 && junk[1].indexOf('Hi, this is Riley') === -1 && junk[2].indexOf('Hi, this is Riley') === -1;
+      var noRepeat = junk[0] !== junk[1] && junk[1] !== junk[2];
+      return { ok: c.session.state === 'LIVE_AGENT' && noSecondConnect && noRepeat, got: { session: c.session, text: junk.join(' >> ') } }; } },
+
+  { input:'junk then a real question in LIVE_AGENT', from:'LIVE_AGENT', expect:'Riley answers correctly, proving state was never lost',
+    run:function(){ var d = drive(['talk to a human', 'where is my <abc>?', 'what is your return policy']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, '30 days to return an item'), got: d }; } },
+
+  { input:'MENU junk then talk to a human', from:'MENU', expect:'connects normally with one clean sequence',
+    run:function(){ var d = drive(['where is my <abc>?', 'talk to a human']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'Connecting you with a live agent now.') && has(d.text, 'Hi, this is Riley'), got: d }; } },
+
+  /* Found during the mandatory audit: the same unguarded fallback() call sat on
+     the empty-after-normalize branch, a message that strips to nothing, like
+     "!!!", silently reset LIVE_AGENT to MENU the same way junk tokens did. */
+  { input:'!!!', from:'LIVE_AGENT', expect:'empty-normalize input does not reset state, unlike the pre-fix bug',
+    run:function(){ var d = drive(['talk to a human', '!!!']);
+      return { ok: d.session.state === 'LIVE_AGENT' && !has(d.text, 'Hi, this is Riley'), got: d }; } },
+
+  /* The escalation cap was once per session, not once per stuck episode, so a
+     user who got helped once could never escalate again for the rest of the
+     conversation. exitToMenu() now resets escalationUsed on a genuine return
+     from LIVE_AGENT, ending that episode. */
+  { input:'escalate, exit, escalate again', from:'MENU', expect:'second stuck episode escalates a second time',
+    run:function(){
+      var c = driveCollect(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'menu', 'qwoieur', 'zmxncbv', 'xcvbnm']);
+      var firstEpisode = c.texts[2].indexOf('Hi, this is Riley') !== -1;
+      var exited = c.texts[3].indexOf('North Star Support Bot') !== -1;
+      var secondEpisode = c.texts[6].indexOf('Hi, this is Riley') !== -1;
+      return { ok: firstEpisode && exited && secondEpisode && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
+
+  { input:'escalate, exit, only two misses', from:'MENU', expect:'counter genuinely resets to 0, two is not enough to escalate again',
+    run:function(){
+      var d = drive(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'menu', 'qwoieur', 'zmxncbv']);
+      return { ok: d.session.state === 'MENU' && d.session.stuckCount === 2, got: d }; } },
+
+  { input:'escalate, stay connected, more junk', from:'LIVE_AGENT', expect:'no exit means no new episode, still never a second connect sequence',
+    run:function(){
+      var c = driveCollect(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'where is my <abc>?', 'track order {123}', '[c]']);
+      var connectCount = c.texts.filter(function(t){ return t.indexOf('Hi, this is Riley') !== -1; }).length;
+      return { ok: connectCount === 1 && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
+
+  { input:'three separate escalations in one session', from:'MENU', expect:'all three fire cleanly across a long session',
+    run:function(){
+      var c = driveCollect(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'menu',
+                             'qwoieur', 'zmxncbv', 'xcvbnm', 'menu',
+                             'poiuyt', 'lkjhgf', 'mnbvcx']);
+      var connectCount = c.texts.filter(function(t){ return t.indexOf('Hi, this is Riley') !== -1; }).length;
+      return { ok: connectCount === 3 && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
+
+  { input:'explicit live agent chip after an episode', from:'MENU', expect:'talk to a human still works regardless of the counter',
+    run:function(){ var d = drive(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'menu', 'talk to a human']);
+      return { ok: d.session.state === 'LIVE_AGENT' && has(d.text, 'Hi, this is Riley'), got: d }; } },
+
+  /* handBackToBot() is a second, distinct exit from LIVE_AGENT to the bot,
+     reached when Riley hands a multi-turn request back mid-conversation
+     instead of through the "Back to main menu" chip. Found during the audit:
+     it reset stuckCount but not escalationUsed, so a user handed back this
+     way could never escalate again for the rest of the session either. */
+  { input:'escalate, hand back via order lookup, escalate again', from:'MENU', expect:'handBackToBot is also a genuine exit, second episode escalates',
+    run:function(){
+      var c = driveCollect(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'track my order', 'asdkjhasd', 'asdkjhasd', 'asdkjhasd']);
+      var firstEpisode = c.texts[2].indexOf('Hi, this is Riley') !== -1;
+      var handback = c.texts[3].indexOf('Back with the support bot') !== -1;
+      var secondEpisode = c.texts[6].indexOf('Hi, this is Riley') !== -1;
+      return { ok: firstEpisode && handback && secondEpisode && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
+
+  { input:'escalate, hand back via gear rec, escalate again', from:'MENU', expect:'same fix, the product recommendation handback path',
+    run:function(){
+      var c = driveCollect(['asdkjhasd', 'asdkjhasd', 'asdkjhasd', 'help me find gear', 'asdkjhasd', 'asdkjhasd', 'asdkjhasd']);
+      var firstEpisode = c.texts[2].indexOf('Hi, this is Riley') !== -1;
+      var handback = c.texts[3].indexOf('Back with the support bot') !== -1;
+      var secondEpisode = c.texts[6].indexOf('Hi, this is Riley') !== -1;
+      return { ok: firstEpisode && handback && secondEpisode && c.session.state === 'LIVE_AGENT', got: { session: c.session, text: c.texts.join(' >> ') } }; } },
+
+  { input:'are you a bot', from:'MENU', expect:'honest bot-identity disclosure, consistent with the LIVE_AGENT answer',
+    run:function(){ var d = drive(['are you a bot']);
+      return { ok: has(d.text, "I'm the North Star Support Bot.") && d.session.state === 'MENU', got: d }; } }
 ];
 
 function runSelfTest(){
