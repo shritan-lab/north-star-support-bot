@@ -233,6 +233,42 @@ state-specific routing that would otherwise make this distinction:
   behaved before junk tokens existed as a category. There is nowhere further
   to escalate to: the user is already with a person.
 
+## Placeholder objects in an order-tracking phrase
+
+Checked right after the junk token gate, still before intent matching, and
+scoped just as narrowly: only the single trailing word of an order-tracking
+trigger phrase ("where is my ___", "track my ___", "wheres my ___" and the
+close variants), never the rest of the message and never any other intent's
+vocabulary. Two independent checks, either one is enough:
+
+- A small, closed, explicit list of words that are only ever test or
+  placeholder filler (`abc`, `test`, `qwerty`, and the rest). Kept even though
+  a structural rule also exists below, because most of these are real
+  strings, `qwerty` and `sample` read as ordinary words to a structural test,
+  and the two shortest, `abc` and `xyz`, are under the structural rule's own
+  length floor. Neither check is a superset of the other.
+- A structural rule: a letters-only trailing word of 4 or more characters is
+  gibberish if it has zero vowels, or a run of 5 or more consecutive
+  consonants. This is what catches keyboard-mash nobody named in advance,
+  `zxcvbn`, `ghjkl`, `fghjk`. Words under 4 letters are never judged this way.
+  A token that is not purely alphabetic, an order number or `order#`, is
+  never evaluated by either check, so digits are untouched.
+
+Either check firing routes through the same `unrecognizedInput()` helper as
+the junk token gate: standard fallback at MENU or a slot-filling state,
+Riley's rotating redirect in `LIVE_AGENT`, same state-branch, same counting
+behavior. A real object after the trigger, however plain, crude, or unusual,
+satisfies neither check and reaches `AWAIT_ORDER` exactly as before:
+`where is my stuff`, `where is my package`, `where is my shit`.
+
+The structural rule has a known blind spot. A mash with exactly one vowel
+breaking up the run, `kjwef`, has the same shape as a real word with one
+embedded vowel and a short consonant cluster, `purchase`: both max out at a
+run of three or four consonants, never five. No threshold on vowel count or
+run length separates the two without misclassifying the real word, so a mash
+shaped like `kjwef` is not caught. Left as specified rather than patched
+around, since patching it would risk the real word it collides with.
+
 ## Global interrupt rule
 
 From **any** state other than `LIVE_AGENT`, these are recognized before slot

@@ -1091,7 +1091,11 @@ function hasJunkToken(raw){
    not a vagueness filter: "stuff", "package", "thing" and even profanity are
    all things a real customer might plausibly type and must keep routing to
    AWAIT_ORDER as they always have. The distinction is "is this word ever
-   anything other than a placeholder", not "is this a real word". */
+   anything other than a placeholder", not "is this a real word".
+   Kept alongside the structural rule below, not replaced by it: every word
+   here is a real short string (qwerty, test, sample) or under the structural
+   rule's 4-letter floor (abc, xyz, foo, bar), so none of them is actually
+   caught by vowel/run structure alone. */
 var ORDER_PLACEHOLDER_OBJECTS = [
   'abc', 'xyz', 'asdf', 'foo', 'bar', 'lorem', 'qwerty', 'foobar',
   'test', 'testing', 'sample', 'placeholder'
@@ -1100,17 +1104,49 @@ var ORDER_PLACEHOLDER_TRIGGERS = [
   'where is my', 'wheres my', 'track my', 'tracking my', 'check my', 'checking my'
 ];
 
+/* Structural gibberish test for the single trailing word of an order-tracking
+   phrase. Letters only, 4 or more of them: flagged if it has no vowel at all,
+   or a run of 5 or more consecutive consonants. Words under 4 letters are
+   never judged this way, too short to tell either way. This catches
+   keyboard-mash the explicit list above was never going to anticipate, but
+   it cannot catch every case: a mash with one vowel breaking up the run, like
+   "kjwef", reads structurally the same as a real word with one embedded
+   vowel and a 3-consonant cluster, like "purchase", so it is left alone. */
+var VOWELS = 'aeiou';
+var GIBBERISH_MIN_LENGTH = 4;
+var GIBBERISH_CONSONANT_RUN = 5;
+function isStructurallyGibberish(word){
+  if(word.length < GIBBERISH_MIN_LENGTH){ return false; }
+  var vowelCount = 0;
+  var run = 0;
+  var maxRun = 0;
+  for(var i = 0; i < word.length; i++){
+    if(VOWELS.indexOf(word[i]) !== -1){
+      vowelCount++;
+      run = 0;
+    } else {
+      run++;
+      if(run > maxRun){ maxRun = run; }
+    }
+  }
+  return vowelCount === 0 || maxRun >= GIBBERISH_CONSONANT_RUN;
+}
+
 /* True only when the entire normalized message is one of the order-tracking
-   trigger phrases above followed by nothing but a single placeholder word,
-   the same shape as "where is my <abc>". A real object after the trigger,
+   trigger phrases above followed by nothing but a single trailing word that
+   is either on the explicit placeholder list or structurally gibberish, the
+   same shape as "where is my <abc>". A real object after the trigger,
    however crude or vague, leaves this false and the message routes exactly
-   as it always has. */
+   as it always has. Digits are untouched: a token that is not purely
+   alphabetic (an order number, "order#") is never evaluated here at all. */
 function isOrderTrackingPlaceholder(norm){
   for(var i = 0; i < ORDER_PLACEHOLDER_TRIGGERS.length; i++){
     var trigger = ORDER_PLACEHOLDER_TRIGGERS[i];
     if(norm.indexOf(trigger) === 0){
       var rest = norm.slice(trigger.length).replace(/^\s+/, '');
+      if(!/^[a-z]+$/.test(rest)){ continue; }
       if(ORDER_PLACEHOLDER_OBJECTS.indexOf(rest) !== -1){ return true; }
+      if(isStructurallyGibberish(rest)){ return true; }
     }
   }
   return false;
@@ -3378,7 +3414,95 @@ var TEST_CASES = [
 
   { input:'where is my order', from:'MENU', expect:'not on the placeholder list, unchanged, enters AWAIT_ORDER',
     run:function(){ var d = drive(['where is my order']);
-      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } }
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  /* Structural gibberish rule: a 4+ letter trailing object with zero vowels
+     or a run of 5+ consecutive consonants falls back, same as the explicit
+     placeholder list. Real objects, however plain or unusual, must keep
+     entering AWAIT_ORDER unchanged. */
+  { input:'where is my delivery', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my delivery']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my parcel', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my parcel']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my shipment', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my shipment']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my item', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my item']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my box', from:'MENU', expect:'under the 4-letter floor, never evaluated, unchanged',
+    run:function(){ var d = drive(['where is my box']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my purchase', from:'MENU', expect:'real object with a 3-consonant run, stays under the 5-run threshold, unchanged',
+    run:function(){ var d = drive(['where is my purchase']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my product', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my product']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my thing', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my thing']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my goods', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my goods']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my crate', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my crate']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my consignment', from:'MENU', expect:'real object, unchanged, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my consignment']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my order#', from:'MENU', expect:'trailing token is not purely alphabetic, never evaluated, unchanged',
+    run:function(){ var d = drive(['where is my order#']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my kjwef', from:'MENU', expect:'kjwef contains one vowel breaking the run to 3, does not satisfy the literal rule, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['where is my kjwef']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'track my kjhwef', from:'MENU', expect:'kjhwef contains one vowel breaking the run to 4, does not satisfy the literal rule, enters AWAIT_ORDER',
+    run:function(){ var d = drive(['track my kjhwef']);
+      return { ok: d.session.state === 'AWAIT_ORDER' && has(d.text, "What's your order number?"), got: d }; } },
+
+  { input:'where is my zxcvbn', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my zxcvbn']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my qwrty', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my qwrty']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my ghjkl', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my ghjkl']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my mmmmm', from:'MENU', expect:'zero vowels and a 5-run, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my mmmmm']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my bbbbbb', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my bbbbbb']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'where is my fghjk', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['where is my fghjk']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } },
+
+  { input:'wheres my zxcv', from:'MENU', expect:'zero vowels, structurally gibberish, standard fallback',
+    run:function(){ var d = drive(['wheres my zxcv']);
+      return { ok: has(d.text, COPY.fallbackFirst) && d.session.state === 'MENU', got: d }; } }
 ];
 
 function runSelfTest(){

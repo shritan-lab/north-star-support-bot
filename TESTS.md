@@ -1,6 +1,6 @@
 # Test Results
 
-All 213 cases below are executed by the self-test panel inside `index.html`
+All 234 cases below are executed by the self-test panel inside `index.html`
 (footer link `Run self-test`). Each case builds a fresh session and drives it
 through `handle()`, the same function the chat window calls. Nothing is stubbed
 and no result is hardcoded: a failing case renders as `FAIL` in the panel.
@@ -12,7 +12,7 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 ## Summary
 
 ```
-213 of 213 checks passed
+234 of 234 checks passed
 ```
 
 | # | Input | Starting state | Expected | Observed output | End state | Result |
@@ -230,6 +230,27 @@ shipped file. `/` marks a paragraph break inside one bot message, and
 | 211 | `where is my stuff` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
 | 212 | `where is my package` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
 | 213 | `where is my order` | MENU | not on the placeholder list, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 214 | `where is my delivery` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 215 | `where is my parcel` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 216 | `where is my shipment` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 217 | `where is my item` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 218 | `where is my box` | MENU | under the 4-letter floor, never evaluated, unchanged | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 219 | `where is my purchase` | MENU | real object with a 3-consonant run, stays under the 5-run threshold, unchanged | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 220 | `where is my product` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 221 | `where is my thing` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 222 | `where is my goods` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 223 | `where is my crate` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 224 | `where is my consignment` | MENU | real object, unchanged, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 225 | `where is my order#` | MENU | trailing token is not purely alphabetic, never evaluated, unchanged | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 226 | `where is my kjwef` | MENU | kjwef contains one vowel breaking the run to 3, does not satisfy the literal rule, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 227 | `track my kjhwef` | MENU | kjhwef contains one vowel breaking the run to 4, does not satisfy the literal rule, enters AWAIT_ORDER | Happy to help. What's your order number? | `AWAIT_ORDER` | PASS |
+| 228 | `where is my zxcvbn` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 229 | `where is my qwrty` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 230 | `where is my ghjkl` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 231 | `where is my mmmmm` | MENU | zero vowels and a 5-run, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 232 | `where is my bbbbbb` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 233 | `where is my fghjk` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
+| 234 | `wheres my zxcv` | MENU | zero vowels, structurally gibberish, standard fallback | Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent. | `MENU` | PASS |
 
 ## Raw run log
 
@@ -238,7 +259,7 @@ calling `runSelfTest()` outside the browser. `boot()` is skipped because
 `document` is undefined there, so only the conversation engine runs.
 
 ```text
-SELF-TEST RESULT: 213 of 213 checks passed
+SELF-TEST RESULT: 234 of 234 checks passed
 
 [PASS] 1. input: where is my order  |  from: MENU
         expected: state AWAIT_ORDER, bot asks for the order number
@@ -1590,6 +1611,111 @@ SELF-TEST RESULT: 213 of 213 checks passed
         expected: not on the placeholder list, unchanged, enters AWAIT_ORDER
         end state: AWAIT_ORDER
         output: Happy to help. What's your order number?
+
+[PASS] 214. input: where is my delivery  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 215. input: where is my parcel  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 216. input: where is my shipment  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 217. input: where is my item  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 218. input: where is my box  |  from: MENU
+        expected: under the 4-letter floor, never evaluated, unchanged
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 219. input: where is my purchase  |  from: MENU
+        expected: real object with a 3-consonant run, stays under the 5-run threshold, unchanged
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 220. input: where is my product  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 221. input: where is my thing  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 222. input: where is my goods  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 223. input: where is my crate  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 224. input: where is my consignment  |  from: MENU
+        expected: real object, unchanged, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 225. input: where is my order#  |  from: MENU
+        expected: trailing token is not purely alphabetic, never evaluated, unchanged
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 226. input: where is my kjwef  |  from: MENU
+        expected: kjwef contains one vowel breaking the run to 3, does not satisfy the literal rule, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 227. input: track my kjhwef  |  from: MENU
+        expected: kjhwef contains one vowel breaking the run to 4, does not satisfy the literal rule, enters AWAIT_ORDER
+        end state: AWAIT_ORDER
+        output: Happy to help. What's your order number?
+
+[PASS] 228. input: where is my zxcvbn  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 229. input: where is my qwrty  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 230. input: where is my ghjkl  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 231. input: where is my mmmmm  |  from: MENU
+        expected: zero vowels and a 5-run, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 232. input: where is my bbbbbb  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 233. input: where is my fghjk  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
+
+[PASS] 234. input: wheres my zxcv  |  from: MENU
+        expected: zero vowels, structurally gibberish, standard fallback
+        end state: MENU
+        output: Sorry, I didn't understand that. I can help with order tracking, returns and exchanges, product recommendations, or I can connect you with a live agent.
 
 ```
 

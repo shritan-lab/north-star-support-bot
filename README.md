@@ -13,13 +13,15 @@ switched off.
 
 Video walkthrough: https://www.youtube.com/watch?v=TAb3tjHzmgE
 
+Fallback handling supplemental demo: https://www.youtube.com/watch?v=qsu1GLH3LAA
+
 ## Files
 
 | File | What it is |
 |---|---|
 | `index.html` | The complete bot. One self-contained file, all HTML, CSS, and JavaScript inline. |
 | `FLOW.md` | Conversation flow map, as a Mermaid state diagram and as plain text. |
-| `TESTS.md` | The 204 test cases with the actual observed output for each. |
+| `TESTS.md` | The 234 test cases with the actual observed output for each. |
 | `README.md` | This file, including the requirement coverage table. |
 
 ---
@@ -94,6 +96,30 @@ through the normal invalid-order path with its own copy and its own counter.
 This closes a client-reported edge case: a garbage identifier following
 tracking phrasing was previously treated as if no number had been given yet.
 
+**Placeholder objects in an order-tracking phrase.** The same treatment
+extends to the single trailing word of "where is my ___", "track my ___" and
+the equivalent trigger phrases, checked two ways. A small closed list catches
+words that are only ever test filler and never a real object (`abc`, `test`,
+`qwerty`, and the rest), kept because most of them are real short strings a
+structural rule cannot single out. A general structural rule catches the
+keyboard-mash that list was never going to anticipate: a letters-only trailing
+word of 4 or more characters is treated the same way if it has no vowel at
+all, or a run of 5 or more consecutive consonants, like `zxcvbn` or `ghjkl`.
+Neither check runs on the rest of the message, only on this one isolated
+trailing word in this one sentence shape, and neither ever fires on a real
+object, however plain, crude, or unusual: `where is my stuff`, `where is my
+package`, and even `where is my shit` all still reach AWAIT_ORDER exactly as
+before. Digits are untouched, since a token that mixes in a digit or symbol,
+an order number, `order#`, is never purely alphabetic and so is never
+evaluated here at all.
+
+The structural rule has a known blind spot, left as specified rather than
+patched around it: a mash with exactly one vowel breaking the run into
+pieces, like `kjwef`, reads the same structurally as a real word with one
+embedded vowel and a short consonant cluster, like `purchase`. There is no
+threshold on vowel count or run length that separates the two without
+misclassifying a real word, so words shaped like `kjwef` are not caught.
+
 **Stemming.** A second normalized form strips a trailing `s` from tokens of four
 or more characters, so `gears`, `jackets` and `orders` reach `gear`, `jacket`
 and `order`. Both forms are scored and the higher wins, so stemming can only add
@@ -149,7 +175,7 @@ specific product and never a price.
 | 1.a | Name: North Star Support Bot (or similar) | header title, `COPY.greeting`, `COPY.agentExit` | open the page |
 | 1.b | Tone: friendly, helpful, outdoorsy, concise | every string in the `CONTENT` block, for example "Glad to hear it. Enjoy the trail." | `333` then `Yes, all good` |
 | 1.c | Audience: North American outdoor consumers | activity and condition sets in `REC_ACTIVITIES` and `REC_CONDITIONS`, and the category language in `REC_MATRIX` | `what should i buy` then `Camping` then `Cold and snowy` |
-| 2.a.i | Order Tracking: Ask for order number. Return simulated status | `AWAIT_ORDER` state, `extractOrderNumber()`, `resolveOrder()`, `ORDERS`. Garbage identifiers such as `<abc>` are caught by `hasJunkToken()` before the slot is filled, a client-reported edge case | `where is my order` then `111`, and separately `where is my <abc>?` |
+| 2.a.i | Order Tracking: Ask for order number. Return simulated status | `AWAIT_ORDER` state, `extractOrderNumber()`, `resolveOrder()`, `ORDERS`. Garbage identifiers such as `<abc>` are caught by `hasJunkToken()`, and placeholder or gibberish objects such as `abc` or `zxcvbn` by `isOrderTrackingPlaceholder()`, both before the slot is filled, a client-reported edge case | `where is my order` then `111`, and separately `where is my <abc>?` and `where is my zxcvbn` |
 | 2.a.ii | Return & Exchanges: Explain return policy. Provide returns link | `COPY.returns`, RETURNS branch of `runIntent()` | `what is your return policy` |
 | 2.a.iii | Product Recommendations: Ask 1-2 clarifying questions. Recommend product category | `REC_Q1` and `REC_Q2` states, `recAdvance()`, `REC_MATRIX`, `recResultText()` | `help me find gear` |
 | 2.a.iv | Human Handoff: Handle fallback or explicit request. Transition to "Live Agent" state | `enterLiveAgent()` reached both from `fallback()` and from the LIVE_AGENT intent, `setAgentMode()` | `talk to a human`, and separately `asdkjhasd` three times |
@@ -180,7 +206,7 @@ specific product and never a price.
 
 | # | Criterion | Where it is addressed |
 |---|---|---|
-| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 204 in `TESTS.md` |
+| 6.a | Coverage of all required use cases | all four use cases plus fallback, verified by cases 1 to 234 in `TESTS.md` |
 | 6.b | Quality and clarity of conversation flows | guided chips at every step, no dead ends, topic switching mid question, mapped in `FLOW.md` |
 | 6.c | Accuracy of responses based on provided data | all copy in one `CONTENT` block, diffed character for character against the brief, nothing invented |
 | 6.d | Effectiveness of intent handling | weighted matcher with tie breaking, 40 of 40 unseen customer phrasings routed correctly in the coverage audit |
@@ -209,13 +235,13 @@ honestly when asked what it is.
 
 ## Self-test
 
-The footer link `Diagnostics` opens a panel that runs 204 cases through the
+The footer link `Diagnostics` opens a panel that runs 234 cases through the
 real intent matcher and the real state machine and reports pass or fail per
 case. It is not a mock: each case builds a fresh session and calls `handle()`,
 the same function the chat window calls on every message. A broken response
 shows up as `FAIL` in the panel.
 
-Current result: **204 of 204 checks passed**. Full output in `TESTS.md`.
+Current result: **234 of 234 checks passed**. Full output in `TESTS.md`.
 
 ## How the code is laid out
 
@@ -226,7 +252,7 @@ The script is in six commented sections, in this order:
 3. `MATCHER`: normalization, scoring, order number extraction.
 4. `STATE`: the state machine, `handle()` and its helpers.
 5. `RENDER`: DOM rendering, typing indicator, quick replies.
-6. `SELFTEST`: the 204 cases and the panel.
+6. `SELFTEST`: the 234 cases and the panel.
 
 `CONTENT` is first on purpose. Checking the bot's accuracy means comparing its
 responses to the provided data, so those responses sit at the top of the file in
@@ -344,7 +370,7 @@ they still win when typed alone and lose to any longer, more specific phrase.
 
 | Check | Result |
 |---|---|
-| Self-test | 204 of 204 checks passed |
+| Self-test | 234 of 234 checks passed |
 | Copy diff against the brief | 89 of 89, character for character |
 | Phrase coverage audit | 40 of 40 after, 0 of 40 before |
 | Console errors on load and through every flow | 0 |
