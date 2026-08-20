@@ -9,7 +9,7 @@ Open `index.html` in any browser. No install, no build step, no API keys, no
 accounts, no setup. Double clicking the file works, including with the network
 switched off.
 
-**Live demo:** `https://shritan-lab.github.io/north-star-support-bot/`
+**Live demo:** https://shritan-lab.github.io/north-star-support-bot/
 Video walkthrough: https://www.youtube.com/watch?v=TAb3tjHzmgE
 
 ## Files
