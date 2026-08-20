@@ -10,6 +10,7 @@ accounts, no setup. Double clicking the file works, including with the network
 switched off.
 
 **Live demo:** https://shritan-lab.github.io/north-star-support-bot/
+
 Video walkthrough: https://www.youtube.com/watch?v=TAb3tjHzmgE
 
 ## Files
